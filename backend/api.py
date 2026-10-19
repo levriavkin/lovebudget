@@ -110,31 +110,45 @@ async def cb_main_menu(call: types.CallbackQuery):
 
 @dp.message(CommandStart(deep_link=True))
 async def cmd_start_deeplink(message: types.Message, command: CommandObject):
-    try:
-        args = command.args
-        if args and args.startswith("pair_"):
+    args = command.args
+    logger.info(f"!!! ПОЛУЧЕНА ГЛУБОКАЯ ССЫЛКА: {args}") # <--- Это покажет лог
+    
+    if args and args.startswith("pair_"):
+        try:
             partner_id = int(args.replace("pair_", ""))
             user_id = message.from_user.id
+            logger.info(f"Пытаюсь связать {user_id} с {partner_id}") # <--- Смотрим ID
             
             if partner_id == user_id:
                 await message.answer("Нельзя пригласить самого себя 🙂")
                 return
 
             with Session(engine) as session:
+                # Ищем обоих пользователей
                 user = session.get(User, user_id)
                 partner = session.get(User, partner_id)
-                if not user: user = User(id=user_id); session.add(user)
-                if not partner: partner = User(id=partner_id); session.add(partner)
+                
+                # Создаем, если нет
+                if not user: 
+                    user = User(id=user_id)
+                    session.add(user)
+                if not partner: 
+                    partner = User(id=partner_id)
+                    session.add(partner)
+                
+                # Связываем
                 user.partner_id = partner_id
                 partner.partner_id = user_id
+                
                 session.commit()
+                logger.info(f"УСПЕХ: {user_id} и {partner_id} теперь пара!") # <--- Ура!
             
             await message.answer("🎉 Отлично! Вы связаны как пара.", reply_markup=get_main_kb())
-        else:
-            await cmd_start(message)
-    except Exception as e:
-        logger.error(f"Ошибка в cmd_start_deeplink: {e}")
-        await message.answer("Ошибка связывания. Попробуйте позже.")
+        except Exception as e:
+            logger.error(f"ОШИБКА СВЯЗЫВАНИЯ: {e}") # <--- Если упадет, увидим тут
+            await message.answer("Произошла ошибка при связывании. Попробуйте позже.")
+    else:
+        await cmd_start(message)
 
 # --- FASTAPI APP ---
 @asynccontextmanager
