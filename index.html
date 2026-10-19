@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LoveBudget</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #f2f2f7; --card: #ffffff; --text: #000; --hint: #8e8e93;
+    --button: #007aff; --button-text: #fff;
+    --positive: #34c759; --negative: #ff3b30;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #000000; --card: #1c1c1e; --text: #fff; --hint: #8e8e93; --button: #0a84ff; }
+  }
+
+  * { box-sizing: border-box; }
+  body { 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+    margin: 0; padding: 16px 12px 60px; 
+    background: var(--bg); color: var(--text); 
+  }
+  h1 { font-size: 24px; margin: 0 0 16px; font-weight: bold; }
+  h3 { margin: 0 0 12px; font-size: 16px; color: var(--text); }
+  
+  .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 120px; }
+  
+  input, select, button { 
+    padding: 12px; border-radius: 10px; border: none; font-size: 15px; 
+    background: var(--bg); color: var(--text); width: 100%; outline: none;
+  }
+  button { background: var(--button); color: var(--button-text); font-weight: 600; cursor: pointer; }
+  button.secondary { background: var(--bg); color: var(--text); font-weight: normal; }
+  
+  .muted { color: var(--hint); font-size: 13px; }
+  .positive { color: var(--positive); }
+  .negative { color: var(--negative); }
+
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat { background: var(--bg); padding: 12px; border-radius: 10px; }
+  .stat-label { font-size: 12px; color: var(--hint); margin-bottom: 4px; }
+  .stat-val { font-size: 18px; font-weight: bold; }
+
+  .tx { padding: 12px 0; border-bottom: 1px solid var(--bg); display: flex; justify-content: space-between; }
+  .tx:last-child { border-bottom: none; }
+  
+  .advice { background: var(--bg); padding: 12px; border-radius: 10px; margin-bottom: 8px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>💑 LoveBudget</h1>
+
+<!-- НАСТРОЙКИ -->
+<div class="card">
+  <h3>⚙️ Настройки пары</h3>
+  <div class="row">
+    <input id="nameA" placeholder="Ваше имя">
+    <input id="incomeA" type="number" placeholder="Ваш доход, ₽">
+  </div>
+  <div class="row">
+    <input id="nameB" placeholder="Имя партнёра">
+    <input id="incomeB" type="number" placeholder="Доход партнёра, ₽">
+  </div>
+  <button onclick="saveSetup()">Сохранить</button>
+  <div id="splitInfo" class="muted" style="margin-top: 12px;"></div>
+</div>
+
+<!-- БАЛАНСЫ -->
+<div class="card">
+  <h3>🏦 Балансы</h3>
+  <div class="grid">
+    <div class="stat">
+      <div class="stat-label">Общий кошелёк</div>
+      <div class="stat-val" id="sharedBalance">0 ₽</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label" id="walletAName">Ваш кошелёк</div>
+      <div class="stat-val" id="walletA">0 ₽</div>
+    </div>
+    <div class="stat" style="grid-column: span 2;">
+      <div class="stat-label" id="walletBName">Кошелёк партнёра</div>
+      <div class="stat-val" id="walletB">0 ₽</div>
+    </div>
+  </div>
+</div>
+
+<!-- ТРАНЗАКЦИЯ -->
+<div class="card">
+  <h3>➕ Добавить трату</h3>
+  <div class="row">
+    <input id="txAmount" type="number" placeholder="Сумма, ₽">
+    <input id="txCategory" placeholder="Категория (напр. Продукты)">
+  </div>
+  <div class="row">
+    <select id="txSource">
+      <option value="shared">Из общего кошелька</option>
+      <option value="personal">Из личного кошелька</option>
+    </select>
+    <button onclick="addTx()">Добавить</button>
+  </div>
+</div>
+
+<!-- ПОМОЩНИК -->
+<div class="card">
+  <h3>💡 Помощник</h3>
+  <div id="adviceBlock">
+    <div class="advice">Добавьте траты, и я подскажу, как оптимизировать бюджет.</div>
+  </div>
+</div>
+
+<!-- ИСТОРИЯ -->
+<div class="card">
+  <h3>📜 История трат</h3>
+  <div id="txList" class="muted">Пока нет трат</div>
+  <button class="secondary" onclick="clearHistory()" style="margin-top: 16px; font-size: 13px;">Очистить историю</button>
+</div>
+
+<script>
+// --- БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ ТЕЛЕГРАМА ---
+try {
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+  }
+} catch(e) {}
+
+// --- ДАННЫЕ ---
+let state = {
+  partnerA: { name: '', income: 0, wallet: 0 },
+  partnerB: { name: '', income: 0, wallet: 0 },
+  sharedBalance: 0,
+  transactions: []
+};
+
+function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
+
+// --- СОХРАНЕНИЕ ---
+function saveState() {
+  try { localStorage.setItem('lovebudget_v5', JSON.stringify(state)); } catch(e) {}
+}
+function loadState() {
+  try {
+    let saved = localStorage.getItem('lovebudget_v5');
+    if (saved) {
+      state = JSON.parse(saved);
+      if (!state.transactions) state.transactions = [];
+    }
+  } catch(e) {}
+}
+
+// --- НАСТРОЙКА ---
+function saveSetup() {
+  state.partnerA.name = document.getElementById('nameA').value || 'Вы';
+  state.partnerA.income = +document.getElementById('incomeA').value || 0;
+  state.partnerB.name = document.getElementById('nameB').value || 'Партнёр';
+  state.partnerB.income = +document.getElementById('incomeB').value || 0;
+  
+  state.partnerA.wallet = state.partnerA.income;
+  state.partnerB.wallet = state.partnerB.income;
+
+  saveState();
+  render();
+}
+
+// --- ДОБАВЛЕНИЕ ТРАТЫ ---
+function addTx() {
+  let amount = +document.getElementById('txAmount').value;
+  let category = document.getElementById('txCategory').value.trim() || 'Без категории';
+  let source = document.getElementById('txSource').value;
+
+  if (!amount || amount <= 0) return alert('Введите сумму больше 0');
+
+  if (source === 'shared') {
+    if (state.sharedBalance < amount) return alert('Недостаточно средств в общем кошельке');
+    state.sharedBalance -= amount;
+  } else {
+    if (state.partnerA.wallet < amount) return alert('Недостаточно личных средств');
+    state.partnerA.wallet -= amount;
+  }
+
+  state.transactions.unshift({
+    amount, category, source, date: new Date().toLocaleDateString('ru-RU')
+  });
+
+  document.getElementById('txAmount').value = '';
+  document.getElementById('txCategory').value = '';
+
+  saveState();
+  render();
+}
+
+function clearHistory() {
+  if (confirm('Удалить все траты?')) {
+    state.transactions = [];
+    saveState();
+    render();
+  }
+}
+
+// --- ОТРИСОВКА ---
+function render() {
+  // Заполняем инпуты
+  document.getElementById('nameA').value = state.partnerA.name || '';
+  document.getElementById('incomeA').value = state.partnerA.income || '';
+  document.getElementById('nameB').value = state.partnerB.name || '';
+  document.getElementById('incomeB').value = state.partnerB.income || '';
+
+  // Пропорция
+  let total = state.partnerA.income + state.partnerB.income;
+  if (total > 0) {
+    let pA = (state.partnerA.income / total * 100).toFixed(0);
+    document.getElementById('splitInfo').innerHTML = `Взносы: <b>${state.partnerA.name}</b> — ${pA}%, <b>${state.partnerB.name}</b> — ${100-pA}%`;
+  } else {
+    document.getElementById('splitInfo').innerHTML = 'Введите доходы, чтобы рассчитать пропорцию.';
+  }
+
+  // Балансы
+  document.getElementById('sharedBalance').textContent = fmt(state.sharedBalance);
+  document.getElementById('walletAName').textContent = (state.partnerA.name || 'Ваш') + ' кошелёк';
+  document.getElementById('walletBName').textContent = (state.partnerB.name || 'Партнёра') + ' кошелёк';
+  document.getElementById('walletA').textContent = fmt(state.partnerA.wallet || 0);
+  document.getElementById('walletB').textContent = fmt(state.partnerB.wallet || 0);
+
+  // История
+  let list = document.getElementById('txList');
+  if (state.transactions.length === 0) {
+    list.innerHTML = '<div class="muted">Пока нет трат</div>';
+  } else {
+    list.innerHTML = state.transactions.map(tx => `
+      <div class="tx">
+        <div>
+          <div><b>${tx.category}</b></div>
+          <div class="muted" style="font-size: 12px;">${tx.source === 'shared' ? 'Общий' : 'Личный'} · ${tx.date}</div>
+        </div>
+        <div class="negative" style="font-weight: bold;">−${fmt(tx.amount)}</div>
+      </div>
+    `).join('');
+  }
+
+  // Помощник
+  let advice = [];
+  if (state.sharedBalance < 0) {
+    advice.push('<div class="advice negative">🚨 Вы ушли в минус! Траты превышают бюджет.</div>');
+  } else if (state.sharedBalance > 0) {
+    advice.push(`<div class="advice positive">✅ В общем кошельке ${fmt(state.sharedBalance)}.</div>`);
+  }
+  
+  if (state.transactions.length > 0) {
+    let last = state.transactions[0];
+    advice.push(`<div class="advice">📌 Последняя трата: ${last.category} на ${fmt(last.amount)}.</div>`);
+  }
+
+  document.getElementById('adviceBlock').innerHTML = advice.join('');
+}
+
+// --- СТАРТ ---
+loadState();
+render();
+</script>
+</body>
+</html>
