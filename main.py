@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import httpx
 from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F
@@ -9,7 +10,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     WebAppInfo, BotCommand
 )
-from aiogram.filters import Command, CommandStart, CommandObject  # ← Добавлен CommandObject
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # ==================================================================
@@ -19,7 +20,8 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://example.com")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+# Ссылка на ваш сервер Render (откуда вы получили {"status":"ok"})
+BACKEND_URL = os.getenv("BACKEND_URL", "https://lovebudget-u4ez.onrender.com")
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
@@ -84,14 +86,34 @@ async def cmd_start(message: Message):
 async def cmd_start_deeplink(message: Message, command: CommandObject):
     args = command.args
     if args and args.startswith("pair_"):
-        inviter_id = args.replace("pair_", "")
-        await message.answer(
-            f"<b>🎉 Отлично!</b>\n\n"
-            f"Вы присоединились к общему бюджету.\n"
-            f"Теперь откройте приложение, чтобы настроить его вместе.",
-            reply_markup=main_menu_kb(),
-            parse_mode="HTML"
-        )
+        try:
+            partner_id = int(args.replace("pair_", ""))
+            user_id = message.from_user.id
+            
+            if partner_id == user_id:
+                await message.answer("Нельзя пригласить самого себя 🙂")
+                return
+
+            # Отправляем запрос на сервер Render, чтобы связать пару
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{BACKEND_URL}/api/link_partner",
+                    params={"user_id": user_id, "partner_id": partner_id}
+                )
+                
+                if resp.status_code == 200:
+                    await message.answer(
+                        f"<b>🎉 Отлично!</b>\n\n"
+                        f"Вы успешно связаны как пара.\n"
+                        f"Теперь откройте приложение, чтобы увидеть общий бюджет.",
+                        reply_markup=main_menu_kb(),
+                        parse_mode="HTML"
+                    )
+                else:
+                    await message.answer("Ошибка сервера при связывании. Попробуйте позже.")
+        except Exception as e:
+            logger.error(f"Ошибка при связывании: {e}")
+            await message.answer("Сервер временно недоступен. Попробуйте позже.")
     else:
         await cmd_start(message)
 
@@ -103,8 +125,10 @@ async def cmd_help(message: Message):
     text = (
         "<b>❓ Как пользоваться LoveBudget</b>\n\n"
         "1. Нажмите «💰 Открыть бюджет».\n"
-        "2. Настройте имена и доходы.\n"
-        "3. Вносите траты — они появятся в истории."
+        "2. Введите свой доход и нажмите «Сохранить».\n"
+        "3. Нажмите «👥 Пригласить партнёра» и отправьте ссылку второй половинке.\n"
+        "4. Когда партнёр перейдёт по ссылке, вы будете связаны.\n"
+        "5. Вносите траты — они появятся у вас обоих."
     )
     await message.answer(text, reply_markup=back_kb(), parse_mode="HTML")
 
