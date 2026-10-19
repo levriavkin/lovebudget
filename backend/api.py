@@ -61,8 +61,20 @@ def get_main_kb():
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     try:
+        user_id = message.from_user.id
+        # Проверяем, есть ли у вас пара в базе
+        with Session(engine) as session:
+            user = session.get(User, user_id)
+            if user and user.partner_id:
+                partner_status = f"✅ Вы в паре с ID: {user.partner_id}"
+            else:
+                partner_status = "❌ Партнёр не привязан"
+        
         name = message.from_user.first_name or "друг"
-        await message.answer(f"Привет, {name}! 👋\n\nЭто LoveBudget. Нажми кнопку ниже.", reply_markup=get_main_kb())
+        await message.answer(
+            f"Привет, {name}! 👋\n\n{partner_status}\n\nЭто LoveBudget.", 
+            reply_markup=get_main_kb()
+        )
     except Exception as e:
         logger.error(f"Ошибка в cmd_start: {e}")
         await message.answer("Произошла ошибка. Попробуйте позже.")
