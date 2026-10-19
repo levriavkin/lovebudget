@@ -1,6 +1,6 @@
-aiogram==3.13.1
-python-dotenv==1.0.1
 fastapi
 uvicorn
 sqlmodel
+aiogram
+python-dotenv
 httpx
