@@ -58,18 +58,41 @@ async def cmd_start(message: types.Message):
     await message.answer(f"Привет, {name}! 👋\n\nЭто LoveBudget. Нажми кнопку ниже.", reply_markup=kb)
 
 @dp.callback_query(lambda c: c.data == "invite")
+@dp.callback_query(lambda c: c.data == "invite")
 async def cb_invite(call: types.CallbackQuery):
-    await call.answer()
-    user_id = call.from_user.id
-    bot_username = (await bot.get_me()).username
-    invite_link = f"https://t.me/{bot_username}?start=pair_{user_id}"
-    
-    text = f"<b>👥 Пригласите партнёра</b>\n\n<code>{invite_link}</code>"
-    share_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
-    ])
-    await call.message.edit_text(text, reply_markup=share_kb, parse_mode="HTML")
+    try:
+        await call.answer() # Обязательно отвечаем Telegram, чтобы кнопка не "висела"
+        
+        user_id = call.from_user.id
+        
+        # Получаем имя бота (на случай, если Telegram API тормозит)
+        try:
+            bot_me = await bot.get_me()
+            bot_username = bot_me.username
+        except Exception as e:
+            logger.error(f"Не удалось получить имя бота: {e}")
+            await call.message.answer("Ошибка сервера. Попробуйте позже.")
+            return
+
+        invite_link = f"https://t.me/{bot_username}?start=pair_{user_id}"
+        
+        text = f"<b>👥 Пригласите партнёра</b>\n\n<code>{invite_link}</code>"
+        
+        share_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
+        ])
+        
+        # Редактируем сообщение (меняем текст и кнопки)
+        await call.message.edit_text(text, reply_markup=share_kb, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в cb_invite: {e}")
+        # Если не удалось изменить сообщение, просто отправляем новое
+        try:
+            await call.message.answer("Произошла ошибка при создании ссылки. Попробуйте позже.")
+        except:
+            pass
 
 @dp.callback_query(lambda c: c.data == "main_menu")
 async def cb_main_menu(call: types.CallbackQuery):
