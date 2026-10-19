@@ -66,9 +66,20 @@ async def cmd_help(message: types.Message):
 @dp.callback_query(lambda c: c.data == "invite")
 async def cb_invite(call: types.CallbackQuery):
     try:
-        await call.answer()
+        await call.answer() # Обязательно отвечаем Telegram
+        
         user_id = call.from_user.id
-        bot_username = (await bot.get_me()).username
+        
+        # Пытаемся получить имя бота, но если не получится - используем заглушку
+        try:
+            bot_me = await bot.get_me()
+            bot_username = bot_me.username
+        except Exception as e:
+            logger.error(f"Не удалось получить username: {e}")
+            # Если Telegram API тормозит, подставляем имя вашего бота вручную
+            # ЗАМЕНИТЕ 'lovebudget_bot' на реальный username вашего бота!
+            bot_username = "lovebudget_bot" 
+            
         invite_link = f"https://t.me/{bot_username}?start=pair_{user_id}"
         
         text = f"<b>👥 Пригласите партнёра</b>\n\n<code>{invite_link}</code>"
@@ -76,9 +87,11 @@ async def cb_invite(call: types.CallbackQuery):
             [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
         ])
+        
         await call.message.edit_text(text, reply_markup=share_kb, parse_mode="HTML")
+        
     except Exception as e:
-        logger.error(f"Ошибка в cb_invite: {e}")
+        logger.error(f"Критическая ошибка в cb_invite: {e}")
         await call.message.answer("Ошибка. Попробуйте позже.")
 
 @dp.callback_query(lambda c: c.data == "main_menu")
