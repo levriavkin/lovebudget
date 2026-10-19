@@ -103,3 +103,17 @@ def link_partner(user_id: int, partner_id: int, session: Session = Depends(get_s
     session.add(partner)
     session.commit()
     return {"status": "linked"}
+# 5. Удалить трату (для редактирования)
+@app.delete("/api/delete_tx")
+def delete_transaction(tx_id: int, user_id: int, session: Session = Depends(get_session)):
+    tx = session.get(Transaction, tx_id)
+    if not tx:
+        raise HTTPException(status_code=404, detail="Транзакция не найдена")
+    
+    # Проверка безопасности: удалять может только тот, кто создал
+    if tx.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Нет прав на удаление")
+    
+    session.delete(tx)
+    session.commit()
+    return {"status": "deleted"}
