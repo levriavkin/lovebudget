@@ -18,6 +18,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://levriavkin.github.io/lovebudget/")
 RENDER_URL = os.getenv("RENDER_URL", "https://lovebudget-u4ez.onrender.com") 
 
+# ВАШ USERNAME БОТА (для ссылки-приглашения). 
+# Замените 'lovebudget_bot' на реальный username вашего бота!
+BOT_USERNAME = "love_budget_bot" 
+
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден!")
 
@@ -25,7 +29,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- БАЗА ДАННЫХ ---
-# Используем /tmp для надежности на Render
 DATABASE_URL = "sqlite:////tmp/database.db" 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
@@ -53,32 +56,36 @@ def get_main_kb():
         [InlineKeyboardButton(text="👥 Пригласить партнёра", callback_data="invite")]
     ])
 
-# --- ОБРАБОТЧИКИ БОТА ---
+# --- ОБРАБОТЧИКИ БОТА (ВСЕ ЗАЩИЩЕНЫ) ---
+
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    name = message.from_user.first_name or "друг"
-    await message.answer(f"Привет, {name}! 👋\n\nЭто LoveBudget. Нажми кнопку ниже.", reply_markup=get_main_kb())
+    try:
+        name = message.from_user.first_name or "друг"
+        await message.answer(f"Привет, {name}! 👋\n\nЭто LoveBudget. Нажми кнопку ниже.", reply_markup=get_main_kb())
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_start: {e}")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
-    await message.answer("Нажми «💰 Открыть бюджет» или «👥 Пригласить партнёра».", reply_markup=get_main_kb())
+    try:
+        await message.answer("Нажми «💰 Открыть бюджет» или «👥 Пригласить партнёра».", reply_markup=get_main_kb())
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_help: {e}")
+        await message.answer("Произошла ошибка. Попробуйте позже.")
 
 @dp.callback_query(lambda c: c.data == "invite")
 async def cb_invite(call: types.CallbackQuery):
     try:
-        await call.answer() # Обязательно отвечаем Telegram
-        
+        await call.answer()
         user_id = call.from_user.id
         
-        # Пытаемся получить имя бота, но если не получится - используем заглушку
+        # Безопасное получение username
         try:
-            bot_me = await bot.get_me()
-            bot_username = bot_me.username
-        except Exception as e:
-            logger.error(f"Не удалось получить username: {e}")
-            # Если Telegram API тормозит, подставляем имя вашего бота вручную
-            # ЗАМЕНИТЕ 'lovebudget_bot' на реальный username вашего бота!
-            bot_username = "lovebudget_bot" 
+            bot_username = (await bot.get_me()).username
+        except Exception:
+            bot_username = BOT_USERNAME
             
         invite_link = f"https://t.me/{bot_username}?start=pair_{user_id}"
         
@@ -87,25 +94,28 @@ async def cb_invite(call: types.CallbackQuery):
             [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
         ])
-        
         await call.message.edit_text(text, reply_markup=share_kb, parse_mode="HTML")
-        
     except Exception as e:
-        logger.error(f"Критическая ошибка в cb_invite: {e}")
-        await call.message.answer("Ошибка. Попробуйте позже.")
+        logger.error(f"Ошибка в cb_invite: {e}")
+        await call.message.answer("Ошибка при создании ссылки. Попробуйте позже.")
 
 @dp.callback_query(lambda c: c.data == "main_menu")
 async def cb_main_menu(call: types.CallbackQuery):
-    await call.answer()
-    await call.message.edit_text("Главное меню:", reply_markup=get_main_kb())
+    try:
+        await call.answer()
+        await call.message.edit_text("Главное меню:", reply_markup=get_main_kb())
+    except Exception as e:
+        logger.error(f"Ошибка в cb_main_menu: {e}")
+        await call.message.answer("Ошибка. Попробуйте позже.")
 
 @dp.message(CommandStart(deep_link=True))
 async def cmd_start_deeplink(message: types.Message, command: CommandObject):
-    args = command.args
-    if args and args.startswith("pair_"):
-        try:
+    try:
+        args = command.args
+        if args and args.startswith("pair_"):
             partner_id = int(args.replace("pair_", ""))
             user_id = message.from_user.id
+            
             if partner_id == user_id:
                 await message.answer("Нельзя пригласить самого себя 🙂")
                 return
@@ -120,25 +130,20 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
                 session.commit()
             
             await message.answer("🎉 Отлично! Вы связаны как пара.", reply_markup=get_main_kb())
-        except Exception as e:
-            logger.error(f"Link error: {e}")
-            await message.answer("Ошибка связывания. Попробуйте позже.")
-    else:
-        await cmd_start(message)
+        else:
+            await cmd_start(message)
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_start_deeplink: {e}")
+        await message.answer("Ошибка связывания. Попробуйте позже.")
 
 # --- FASTAPI APP ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Создаем таблицы
     SQLModel.metadata.create_all(engine)
-    
-    # Устанавливаем вебхук (с разрешением на все типы сообщений)
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
     await bot.set_webhook(webhook_url, drop_pending_updates=True)
     logger.info(f"Webhook set to {webhook_url}")
-    
     yield
-    
     await bot.delete_webhook()
     await bot.session.close()
 
@@ -153,10 +158,14 @@ app.add_middleware(
 
 @app.post(f"/webhook/{BOT_TOKEN}")
 async def telegram_webhook(request: Request):
-    update_data = await request.json()
-    update = types.Update(**update_data)
-    await dp.feed_update(bot, update)
-    return {"ok": True}
+    try:
+        update_data = await request.json()
+        update = types.Update(**update_data)
+        await dp.feed_update(bot, update)
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Ошибка в webhook: {e}")
+        return {"ok": False}
 
 # --- API ДЛЯ ПРИЛОЖЕНИЯ ---
 @app.get("/")
