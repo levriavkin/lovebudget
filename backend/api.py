@@ -18,8 +18,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://levriavkin.github.io/lovebudget/")
 RENDER_URL = os.getenv("RENDER_URL", "https://lovebudget-u4ez.onrender.com") 
 
-# ВАШ USERNAME БОТА (для ссылки-приглашения). 
-# Замените 'lovebudget_bot' на реальный username вашего бота!
 BOT_USERNAME = "love_budget_bot" 
 
 if not BOT_TOKEN:
@@ -56,13 +54,12 @@ def get_main_kb():
         [InlineKeyboardButton(text="👥 Пригласить партнёра", callback_data="invite")]
     ])
 
-# --- ОБРАБОТЧИКИ БОТА (ВСЕ ЗАЩИЩЕНЫ) ---
+# --- ОБРАБОТЧИКИ БОТА ---
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     try:
         user_id = message.from_user.id
-        # Проверяем, есть ли у вас пара в базе
         with Session(engine) as session:
             user = session.get(User, user_id)
             if user and user.partner_id:
@@ -93,7 +90,6 @@ async def cb_invite(call: types.CallbackQuery):
         await call.answer()
         user_id = call.from_user.id
         
-        # Безопасное получение username
         try:
             bot_username = (await bot.get_me()).username
         except Exception:
@@ -122,14 +118,11 @@ async def cb_main_menu(call: types.CallbackQuery):
 
 @dp.message(CommandStart(deep_link=True))
 async def cmd_start_deeplink(message: types.Message, command: CommandObject):
-     logger.info(f"🚨 ВНИМАНИЕ! БОТ ПОЛУЧИЛ ССЫЛКУ. Аргументы: '{command.args}'") 
     args = command.args
-    # Этот лог покажет, что вообще пришло в боте
     logger.info(f"🔗 ССЫЛКА: получены аргументы '{args}' от пользователя {message.from_user.id}")
     
     if args and args.startswith("pair_"):
         try:
-            # Извлекаем ID пригласившего
             partner_id = int(args.replace("pair_", ""))
             user_id = message.from_user.id
             
@@ -139,7 +132,6 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
                 await message.answer("Нельзя пригласить самого себя 🙂")
                 return
 
-            # Работа с базой данных
             with Session(engine) as session:
                 user = session.get(User, user_id)
                 partner = session.get(User, partner_id)
@@ -151,7 +143,6 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
                     partner = User(id=partner_id)
                     session.add(partner)
                 
-                # Связываем в обе стороны
                 user.partner_id = partner_id
                 partner.partner_id = user_id
                 
@@ -164,7 +155,6 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
             logger.error(f"❌ ОШИБКА СВЯЗЫВАНИЯ: {e}")
             await message.answer("Произошла ошибка при связывании. Попробуйте позже.")
     else:
-        # Если ссылка пришла без параметра (или просто /start)
         logger.info("Ссылка без параметра. Вызываю обычный /start.")
         await cmd_start(message)
 
@@ -173,7 +163,8 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
-    #await bot.set_webhook(webhook_url, drop_pending_updates=True)
+    # Раскомментируйте строку ниже, чтобы сервер сам ставил вебхук:
+    await bot.set_webhook(webhook_url, drop_pending_updates=True)
     logger.info(f"Webhook set to {webhook_url}")
     yield
     await bot.delete_webhook()
