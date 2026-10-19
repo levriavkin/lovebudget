@@ -9,7 +9,7 @@
   :root {
     --bg: #f2f2f7; --card: #ffffff; --text: #000; --hint: #8e8e93;
     --button: #007aff; --button-text: #fff;
-    --positive: #34c759; --negative: #ff3b30;
+    --positive: #34c759; --negative: #ff3b30; --warn: #ff9500;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #000000; --card: #1c1c1e; --text: #fff; --hint: #8e8e93; --button: #0a84ff; }
@@ -46,8 +46,6 @@
 
   .tx { padding: 12px 0; border-bottom: 1px solid var(--bg); display: flex; justify-content: space-between; }
   .tx:last-child { border-bottom: none; }
-  
-  .advice { background: var(--bg); padding: 12px; border-radius: 10px; margin-bottom: 8px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -73,15 +71,15 @@
 <div class="card">
   <h3>🏦 Балансы</h3>
   <div class="grid">
-    <div class="stat">
-      <div class="stat-label">Общий кошелёк</div>
-      <div class="stat-val" id="sharedBalance">0 ₽</div>
+    <div class="stat" style="grid-column: span 2; background: rgba(0,122,255,0.1);">
+      <div class="stat-label">Общий бюджет (Сумма доходов)</div>
+      <div class="stat-val" id="sharedBalance" style="color: var(--button);">0 ₽</div>
     </div>
     <div class="stat">
       <div class="stat-label" id="walletAName">Ваш кошелёк</div>
       <div class="stat-val" id="walletA">0 ₽</div>
     </div>
-    <div class="stat" style="grid-column: span 2;">
+    <div class="stat">
       <div class="stat-label" id="walletBName">Кошелёк партнёра</div>
       <div class="stat-val" id="walletB">0 ₽</div>
     </div>
@@ -93,22 +91,15 @@
   <h3>➕ Добавить трату</h3>
   <div class="row">
     <input id="txAmount" type="number" placeholder="Сумма, ₽">
-    <input id="txCategory" placeholder="Категория (напр. Продукты)">
+    <input id="txCategory" placeholder="Категория">
   </div>
   <div class="row">
     <select id="txSource">
-      <option value="shared">Из общего кошелька</option>
-      <option value="personal">Из личного кошелька</option>
+      <option value="shared">Из общего бюджета</option>
+      <option value="personalA">Из личного (Вы)</option>
+      <option value="personalB">Из личного (Партнёр)</option>
     </select>
     <button onclick="addTx()">Добавить</button>
-  </div>
-</div>
-
-<!-- ПОМОЩНИК -->
-<div class="card">
-  <h3>💡 Помощник</h3>
-  <div id="adviceBlock">
-    <div class="advice">Добавьте траты, и я подскажу, как оптимизировать бюджет.</div>
   </div>
 </div>
 
@@ -120,7 +111,7 @@
 </div>
 
 <script>
-// --- БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ ТЕЛЕГРАМА ---
+// --- ИНИЦИАЛИЗАЦИЯ ТЕЛЕГРАМА ---
 try {
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
@@ -130,9 +121,8 @@ try {
 
 // --- ДАННЫЕ ---
 let state = {
-  partnerA: { name: '', income: 0, wallet: 0 },
-  partnerB: { name: '', income: 0, wallet: 0 },
-  sharedBalance: 0,
+  partnerA: { name: '', income: 0 },
+  partnerB: { name: '', income: 0 },
   transactions: []
 };
 
@@ -140,11 +130,11 @@ function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
 // --- СОХРАНЕНИЕ ---
 function saveState() {
-  try { localStorage.setItem('lovebudget_v5', JSON.stringify(state)); } catch(e) {}
+  try { localStorage.setItem('lovebudget_v6', JSON.stringify(state)); } catch(e) {}
 }
 function loadState() {
   try {
-    let saved = localStorage.getItem('lovebudget_v5');
+    let saved = localStorage.getItem('lovebudget_v6');
     if (saved) {
       state = JSON.parse(saved);
       if (!state.transactions) state.transactions = [];
@@ -158,9 +148,6 @@ function saveSetup() {
   state.partnerA.income = +document.getElementById('incomeA').value || 0;
   state.partnerB.name = document.getElementById('nameB').value || 'Партнёр';
   state.partnerB.income = +document.getElementById('incomeB').value || 0;
-  
-  state.partnerA.wallet = state.partnerA.income;
-  state.partnerB.wallet = state.partnerB.income;
 
   saveState();
   render();
@@ -174,12 +161,15 @@ function addTx() {
 
   if (!amount || amount <= 0) return alert('Введите сумму больше 0');
 
+  // Считаем текущие балансы перед добавлением
+  let balances = calculateBalances();
+
   if (source === 'shared') {
-    if (state.sharedBalance < amount) return alert('Недостаточно средств в общем кошельке');
-    state.sharedBalance -= amount;
-  } else {
-    if (state.partnerA.wallet < amount) return alert('Недостаточно личных средств');
-    state.partnerA.wallet -= amount;
+    if (balances.shared < amount) return alert('Недостаточно средств в общем бюджете!');
+  } else if (source === 'personalA') {
+    if (balances.walletA < amount) return alert('Недостаточно личных средств!');
+  } else if (source === 'personalB') {
+    if (balances.walletB < amount) return alert('Недостаточно личных средств партнёра!');
   }
 
   state.transactions.unshift({
@@ -201,6 +191,26 @@ function clearHistory() {
   }
 }
 
+// --- РАСЧЕТ БАЛАНСОВ ---
+function calculateBalances() {
+  let totalIncome = state.partnerA.income + state.partnerB.income;
+  let sharedSpent = 0;
+  let personalASpent = 0;
+  let personalBSpent = 0;
+
+  state.transactions.forEach(tx => {
+    if (tx.source === 'shared') sharedSpent += tx.amount;
+    if (tx.source === 'personalA') personalASpent += tx.amount;
+    if (tx.source === 'personalB') personalBSpent += tx.amount;
+  });
+
+  return {
+    shared: totalIncome - sharedSpent,
+    walletA: state.partnerA.income - personalASpent,
+    walletB: state.partnerB.income - personalBSpent
+  };
+}
+
 // --- ОТРИСОВКА ---
 function render() {
   // Заполняем инпуты
@@ -213,48 +223,37 @@ function render() {
   let total = state.partnerA.income + state.partnerB.income;
   if (total > 0) {
     let pA = (state.partnerA.income / total * 100).toFixed(0);
-    document.getElementById('splitInfo').innerHTML = `Взносы: <b>${state.partnerA.name}</b> — ${pA}%, <b>${state.partnerB.name}</b> — ${100-pA}%`;
+    document.getElementById('splitInfo').innerHTML = `Взносы в бюджет: <b>${state.partnerA.name}</b> — ${pA}%, <b>${state.partnerB.name}</b> — ${100-pA}%`;
   } else {
-    document.getElementById('splitInfo').innerHTML = 'Введите доходы, чтобы рассчитать пропорцию.';
+    document.getElementById('splitInfo').innerHTML = 'Введите доходы, чтобы увидеть пропорцию.';
   }
 
   // Балансы
-  document.getElementById('sharedBalance').textContent = fmt(state.sharedBalance);
+  let balances = calculateBalances();
+  document.getElementById('sharedBalance').textContent = fmt(balances.shared);
   document.getElementById('walletAName').textContent = (state.partnerA.name || 'Ваш') + ' кошелёк';
   document.getElementById('walletBName').textContent = (state.partnerB.name || 'Партнёра') + ' кошелёк';
-  document.getElementById('walletA').textContent = fmt(state.partnerA.wallet || 0);
-  document.getElementById('walletB').textContent = fmt(state.partnerB.wallet || 0);
+  document.getElementById('walletA').textContent = fmt(balances.walletA);
+  document.getElementById('walletB').textContent = fmt(balances.walletB);
 
   // История
   let list = document.getElementById('txList');
   if (state.transactions.length === 0) {
     list.innerHTML = '<div class="muted">Пока нет трат</div>';
   } else {
-    list.innerHTML = state.transactions.map(tx => `
-      <div class="tx">
-        <div>
-          <div><b>${tx.category}</b></div>
-          <div class="muted" style="font-size: 12px;">${tx.source === 'shared' ? 'Общий' : 'Личный'} · ${tx.date}</div>
+    list.innerHTML = state.transactions.map(tx => {
+      let srcName = tx.source === 'shared' ? 'Общий бюджет' : (tx.source === 'personalA' ? 'Личный (Вы)' : 'Личный (Партнёр)');
+      return `
+        <div class="tx">
+          <div>
+            <div><b>${tx.category}</b></div>
+            <div class="muted" style="font-size: 12px;">${srcName} · ${tx.date}</div>
+          </div>
+          <div class="negative" style="font-weight: bold;">−${fmt(tx.amount)}</div>
         </div>
-        <div class="negative" style="font-weight: bold;">−${fmt(tx.amount)}</div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
-
-  // Помощник
-  let advice = [];
-  if (state.sharedBalance < 0) {
-    advice.push('<div class="advice negative">🚨 Вы ушли в минус! Траты превышают бюджет.</div>');
-  } else if (state.sharedBalance > 0) {
-    advice.push(`<div class="advice positive">✅ В общем кошельке ${fmt(state.sharedBalance)}.</div>`);
-  }
-  
-  if (state.transactions.length > 0) {
-    let last = state.transactions[0];
-    advice.push(`<div class="advice">📌 Последняя трата: ${last.category} на ${fmt(last.amount)}.</div>`);
-  }
-
-  document.getElementById('adviceBlock').innerHTML = advice.join('');
 }
 
 // --- СТАРТ ---
