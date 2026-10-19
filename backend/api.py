@@ -123,24 +123,26 @@ async def cb_main_menu(call: types.CallbackQuery):
 @dp.message(CommandStart(deep_link=True))
 async def cmd_start_deeplink(message: types.Message, command: CommandObject):
     args = command.args
-    logger.info(f"!!! ПОЛУЧЕНА ГЛУБОКАЯ ССЫЛКА: {args}") # <--- Это покажет лог
+    # Этот лог покажет, что вообще пришло в боте
+    logger.info(f"🔗 ССЫЛКА: получены аргументы '{args}' от пользователя {message.from_user.id}")
     
     if args and args.startswith("pair_"):
         try:
+            # Извлекаем ID пригласившего
             partner_id = int(args.replace("pair_", ""))
             user_id = message.from_user.id
-            logger.info(f"Пытаюсь связать {user_id} с {partner_id}") # <--- Смотрим ID
+            
+            logger.info(f"🤝 Попытка связать: {user_id} (новый) и {partner_id} (пригласивший)")
             
             if partner_id == user_id:
                 await message.answer("Нельзя пригласить самого себя 🙂")
                 return
 
+            # Работа с базой данных
             with Session(engine) as session:
-                # Ищем обоих пользователей
                 user = session.get(User, user_id)
                 partner = session.get(User, partner_id)
                 
-                # Создаем, если нет
                 if not user: 
                     user = User(id=user_id)
                     session.add(user)
@@ -148,18 +150,21 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
                     partner = User(id=partner_id)
                     session.add(partner)
                 
-                # Связываем
+                # Связываем в обе стороны
                 user.partner_id = partner_id
                 partner.partner_id = user_id
                 
                 session.commit()
-                logger.info(f"УСПЕХ: {user_id} и {partner_id} теперь пара!") # <--- Ура!
+                logger.info(f"✅ УСПЕХ: {user_id} и {partner_id} теперь пара!")
             
-            await message.answer("🎉 Отлично! Вы связаны как пара.", reply_markup=get_main_kb())
+            await message.answer("🎉 Отлично! Вы связаны как пара. Откройте бюджет.", reply_markup=get_main_kb())
+            
         except Exception as e:
-            logger.error(f"ОШИБКА СВЯЗЫВАНИЯ: {e}") # <--- Если упадет, увидим тут
+            logger.error(f"❌ ОШИБКА СВЯЗЫВАНИЯ: {e}")
             await message.answer("Произошла ошибка при связывании. Попробуйте позже.")
     else:
+        # Если ссылка пришла без параметра (или просто /start)
+        logger.info("Ссылка без параметра. Вызываю обычный /start.")
         await cmd_start(message)
 
 # --- FASTAPI APP ---
