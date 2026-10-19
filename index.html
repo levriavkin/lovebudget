@@ -7,31 +7,42 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg: #f2f2f7; --card: #ffffff; --text: #000; --hint: #8e8e93;
-    --button: #007aff; --button-text: #fff;
-    --positive: #34c759; --negative: #ff3b30; --warn: #ff9500;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #000000; --card: #1c1c1e; --text: #fff; --hint: #8e8e93; --button: #0a84ff; }
+    --bg: var(--tg-theme-bg-color, #f2f2f7);
+    --card: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #000000);
+    --hint: var(--tg-theme-hint-color, #8e8e93);
+    --button: var(--tg-theme-button-color, #007aff);
+    --button-text: var(--tg-theme-button-text-color, #ffffff);
+    --positive: #34c759;
+    --negative: #ff3b30;
+    --warn: #ff9500;
+    --border-soft: rgba(150,150,150,0.2);
+    --soft: rgba(150,150,150,0.1);
+    --grid-line: rgba(150,150,150,0.3);
   }
 
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  
   body { 
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
     margin: 0; padding: 16px 12px 60px; 
     background: var(--bg); color: var(--text); 
+    line-height: 1.4;
   }
-  h1 { font-size: 24px; margin: 0 0 16px; font-weight: bold; }
-  h3 { margin: 0 0 12px; font-size: 16px; color: var(--text); }
+
+  h1 { font-size: 24px; margin: 0 0 4px; font-weight: bold; }
+  h3 { margin: 0 0 12px; font-size: 16px; color: var(--text); font-weight: 600; }
   
   .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
-  .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-  .row > * { flex: 1; min-width: 120px; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .row > * { flex: 1; min-width: 100px; }
   
   input, select, button { 
     padding: 12px; border-radius: 10px; border: none; font-size: 15px; 
     background: var(--bg); color: var(--text); width: 100%; outline: none;
   }
+  input::placeholder { color: var(--hint); }
+  
   button { background: var(--button); color: var(--button-text); font-weight: 600; cursor: pointer; }
   button.secondary { background: var(--bg); color: var(--text); font-weight: normal; }
   
@@ -44,13 +55,48 @@
   .stat-label { font-size: 12px; color: var(--hint); margin-bottom: 4px; }
   .stat-val { font-size: 18px; font-weight: bold; }
 
-  .tx { padding: 12px 0; border-bottom: 1px solid var(--bg); display: flex; justify-content: space-between; }
+  .tx { padding: 10px 0; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
   .tx:last-child { border-bottom: none; }
+
+  .advice-item { display: flex; gap: 10px; padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 8px; font-size: 14px; border-left: 3px solid var(--button); }
+  .advice-item.warn { border-left-color: var(--warn); }
+  .advice-item.danger { border-left-color: var(--negative); }
+  .advice-item.ok { border-left-color: var(--positive); }
+
+  /* График */
+  .chart-container { background: var(--bg); border-radius: 10px; padding: 12px 4px 4px; margin-top: 12px; }
+  .chart-svg { width: 100%; height: 180px; display: block; }
+
+  /* Лимиты */
+  .limit-item { padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 10px; border-left: 3px solid var(--button); }
+  .limit-item.warn { border-left-color: var(--warn); }
+  .limit-item.danger { border-left-color: var(--negative); }
+  .limit-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; }
+  .limit-bar { background: var(--border-soft); border-radius: 6px; height: 8px; overflow: hidden; }
+  .limit-bar > div { height: 100%; }
+  .limit-bar > div.ok { background: var(--positive); }
+  .limit-bar > div.warn { background: var(--warn); }
+  .limit-bar > div.danger { background: var(--negative); }
+
+  /* Цели */
+  .goal { margin-bottom: 14px; }
+  .goal-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
+  .bar { background: var(--border-soft); border-radius: 6px; height: 10px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--button); transition: width .3s; }
+
+  /* Wishlist */
+  .wish-item { padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .wish-item.priority-high { border-left: 3px solid var(--negative); }
+  .wish-item.priority-medium { border-left: 3px solid var(--warn); }
+  .wish-item.priority-low { border-left: 3px solid var(--hint); }
+  .wish-body { flex: 1; }
+  .wish-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
 </style>
 </head>
 <body>
 
 <h1>💑 LoveBudget</h1>
+<div class="muted" style="margin-bottom: 16px;">Умный бюджет для двоих</div>
 
 <!-- НАСТРОЙКИ -->
 <div class="card">
@@ -73,7 +119,7 @@
   <div class="grid">
     <div class="stat" style="grid-column: span 2; background: rgba(0,122,255,0.1);">
       <div class="stat-label">Общий бюджет (Сумма доходов)</div>
-      <div class="stat-val" id="sharedBalance" style="color: var(--button);">0 ₽</div>
+      <div class="stat-val" id="sharedBalance" style="color: var(--button); font-size: 22px;">0 ₽</div>
     </div>
     <div class="stat">
       <div class="stat-label" id="walletAName">Ваш кошелёк</div>
@@ -103,6 +149,57 @@
   </div>
 </div>
 
+<!-- ЛИМИТЫ -->
+<div class="card">
+  <h3>🎚️ Лимиты по категориям</h3>
+  <div class="row">
+    <input id="limitName" placeholder="Категория" value="Кафе">
+    <input id="limitAmount" type="number" placeholder="Лимит, ₽" value="10000">
+    <button onclick="addLimit()" style="flex: 0 0 auto;">+</button>
+  </div>
+  <div id="limitsList" class="muted">Лимиты не заданы</div>
+</div>
+
+<!-- ГРАФИК -->
+<div class="card">
+  <h3>📈 Динамика расходов</h3>
+  <div id="chartBlock" class="muted">Нет данных</div>
+</div>
+
+<!-- ЦЕЛИ -->
+<div class="card">
+  <h3>🎯 Общие цели</h3>
+  <div class="row">
+    <input id="goalName" placeholder="Название (Отпуск)">
+    <input id="goalTarget" type="number" placeholder="Цель, ₽">
+    <input id="goalMonths" type="number" placeholder="Месяцев">
+    <button onclick="addGoal()" style="flex: 0 0 auto;">+</button>
+  </div>
+  <div id="goals" class="muted">Нет целей</div>
+</div>
+
+<!-- WISHLIST -->
+<div class="card">
+  <h3>🛍️ Несрочные покупки</h3>
+  <div class="row">
+    <input id="wishName" placeholder="Что хотим (Телефон)">
+    <input id="wishPrice" type="number" placeholder="Цена, ₽">
+    <select id="wishPriority">
+      <option value="high">🔴 Высокий</option>
+      <option value="medium" selected>🟡 Средний</option>
+      <option value="low">⚪ Низкий</option>
+    </select>
+    <button onclick="addWish()" style="flex: 0 0 auto;">+</button>
+  </div>
+  <div id="wishlist" class="muted">Пусто</div>
+</div>
+
+<!-- ПОМОЩНИК -->
+<div class="card">
+  <h3>💡 Помощник</h3>
+  <div id="adviceBlock"></div>
+</div>
+
 <!-- ИСТОРИЯ -->
 <div class="card">
   <h3>📜 История трат</h3>
@@ -111,7 +208,6 @@
 </div>
 
 <script>
-// --- ИНИЦИАЛИЗАЦИЯ ТЕЛЕГРАМА ---
 try {
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
@@ -123,37 +219,35 @@ try {
 let state = {
   partnerA: { name: '', income: 0 },
   partnerB: { name: '', income: 0 },
-  transactions: []
+  transactions: [],
+  limits: [],
+  goals: [],
+  wishes: []
 };
 
 function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
+function fmtShort(n) { return n >= 1000 ? Math.round(n/1000) + 'k' : Math.round(n); }
 
-// --- СОХРАНЕНИЕ ---
-function saveState() {
-  try { localStorage.setItem('lovebudget_v6', JSON.stringify(state)); } catch(e) {}
-}
+function saveState() { try { localStorage.setItem('lovebudget_v7', JSON.stringify(state)); } catch(e) {} }
 function loadState() {
   try {
-    let saved = localStorage.getItem('lovebudget_v6');
+    let saved = localStorage.getItem('lovebudget_v7');
     if (saved) {
-      state = JSON.parse(saved);
-      if (!state.transactions) state.transactions = [];
+      state = Object.assign(state, JSON.parse(saved));
     }
   } catch(e) {}
 }
 
-// --- НАСТРОЙКА ---
+// --- ЛОГИКА ---
 function saveSetup() {
   state.partnerA.name = document.getElementById('nameA').value || 'Вы';
   state.partnerA.income = +document.getElementById('incomeA').value || 0;
   state.partnerB.name = document.getElementById('nameB').value || 'Партнёр';
   state.partnerB.income = +document.getElementById('incomeB').value || 0;
-
   saveState();
   render();
 }
 
-// --- ДОБАВЛЕНИЕ ТРАТЫ ---
 function addTx() {
   let amount = +document.getElementById('txAmount').value;
   let category = document.getElementById('txCategory').value.trim() || 'Без категории';
@@ -161,24 +255,16 @@ function addTx() {
 
   if (!amount || amount <= 0) return alert('Введите сумму больше 0');
 
-  // Считаем текущие балансы перед добавлением
   let balances = calculateBalances();
-
-  if (source === 'shared') {
-    if (balances.shared < amount) return alert('Недостаточно средств в общем бюджете!');
-  } else if (source === 'personalA') {
-    if (balances.walletA < amount) return alert('Недостаточно личных средств!');
-  } else if (source === 'personalB') {
-    if (balances.walletB < amount) return alert('Недостаточно личных средств партнёра!');
-  }
+  if (source === 'shared' && balances.shared < amount) return alert('Недостаточно средств в общем бюджете!');
+  if (source === 'personalA' && balances.walletA < amount) return alert('Недостаточно личных средств!');
+  if (source === 'personalB' && balances.walletB < amount) return alert('Недостаточно личных средств партнёра!');
 
   state.transactions.unshift({
     amount, category, source, date: new Date().toLocaleDateString('ru-RU')
   });
-
   document.getElementById('txAmount').value = '';
   document.getElementById('txCategory').value = '';
-
   saveState();
   render();
 }
@@ -191,12 +277,39 @@ function clearHistory() {
   }
 }
 
-// --- РАСЧЕТ БАЛАНСОВ ---
+function addLimit() {
+  let name = document.getElementById('limitName').value.trim();
+  let limit = +document.getElementById('limitAmount').value;
+  if (!name || limit <= 0) return alert('Заполните поля');
+  state.limits.push({ name, limit });
+  saveState();
+  render();
+}
+
+function addGoal() {
+  let name = document.getElementById('goalName').value.trim();
+  let target = +document.getElementById('goalTarget').value;
+  let months = +document.getElementById('goalMonths').value || 12;
+  if (!name || target <= 0) return alert('Заполните поля');
+  state.goals.push({ name, target, saved: 0, monthsLeft: months });
+  saveState();
+  render();
+}
+
+function addWish() {
+  let name = document.getElementById('wishName').value.trim();
+  let price = +document.getElementById('wishPrice').value;
+  let priority = document.getElementById('wishPriority').value;
+  if (!name || price <= 0) return alert('Заполните поля');
+  state.wishes.push({ name, price, priority, saved: 0 });
+  saveState();
+  render();
+}
+
+// --- РАСЧЕТЫ ---
 function calculateBalances() {
   let totalIncome = state.partnerA.income + state.partnerB.income;
-  let sharedSpent = 0;
-  let personalASpent = 0;
-  let personalBSpent = 0;
+  let sharedSpent = 0, personalASpent = 0, personalBSpent = 0;
 
   state.transactions.forEach(tx => {
     if (tx.source === 'shared') sharedSpent += tx.amount;
@@ -211,24 +324,28 @@ function calculateBalances() {
   };
 }
 
+function getLimitStatus(limitObj) {
+  let spent = state.transactions.filter(tx => tx.category === limitObj.name && tx.source === 'shared').reduce((s, tx) => s + tx.amount, 0);
+  let pct = (spent / limitObj.limit) * 100;
+  let level = pct >= 100 ? 'danger' : pct >= 80 ? 'warn' : 'ok';
+  return { spent, pct, level };
+}
+
 // --- ОТРИСОВКА ---
 function render() {
-  // Заполняем инпуты
   document.getElementById('nameA').value = state.partnerA.name || '';
   document.getElementById('incomeA').value = state.partnerA.income || '';
   document.getElementById('nameB').value = state.partnerB.name || '';
   document.getElementById('incomeB').value = state.partnerB.income || '';
 
-  // Пропорция
   let total = state.partnerA.income + state.partnerB.income;
   if (total > 0) {
     let pA = (state.partnerA.income / total * 100).toFixed(0);
-    document.getElementById('splitInfo').innerHTML = `Взносы в бюджет: <b>${state.partnerA.name}</b> — ${pA}%, <b>${state.partnerB.name}</b> — ${100-pA}%`;
+    document.getElementById('splitInfo').innerHTML = `Взносы: <b>${state.partnerA.name}</b> — ${pA}%, <b>${state.partnerB.name}</b> — ${100-pA}%`;
   } else {
     document.getElementById('splitInfo').innerHTML = 'Введите доходы, чтобы увидеть пропорцию.';
   }
 
-  // Балансы
   let balances = calculateBalances();
   document.getElementById('sharedBalance').textContent = fmt(balances.shared);
   document.getElementById('walletAName').textContent = (state.partnerA.name || 'Ваш') + ' кошелёк';
@@ -236,19 +353,105 @@ function render() {
   document.getElementById('walletA').textContent = fmt(balances.walletA);
   document.getElementById('walletB').textContent = fmt(balances.walletB);
 
+  // Лимиты
+  let limitsHtml = '';
+  if (state.limits.length === 0) limitsHtml = 'Лимиты не заданы';
+  else {
+    limitsHtml = state.limits.map((l, idx) => {
+      let s = getLimitStatus(l);
+      let w = Math.min(100, s.pct);
+      return `
+        <div class="limit-item ${s.level}">
+          <div class="limit-head">
+            <span><b>${l.name}</b></span>
+            <span>${fmt(s.spent)} / ${fmt(l.limit)} <span class="badge ${s.level}">${s.pct.toFixed(0)}%</span>
+            <button class="secondary small" onclick="state.limits.splice(${idx},1); saveState(); render();" style="width:auto; padding:2px 8px; margin-left:6px;">✕</button></span>
+          </div>
+          <div class="limit-bar"><div class="${s.level}" style="width:${w}%"></div></div>
+        </div>
+      `;
+    }).join('');
+  }
+  document.getElementById('limitsList').innerHTML = limitsHtml;
+
+  // График (простой)
+  let chartHtml = '';
+  let recentTx = state.transactions.slice(0, 10).reverse();
+  if (recentTx.length > 1) {
+    let maxAmt = Math.max(...recentTx.map(t => t.amount));
+    let points = recentTx.map((t, i) => {
+      let x = (i / (recentTx.length - 1)) * 280 + 10;
+      let y = 150 - (t.amount / maxAmt) * 120;
+      return `${x},${y}`;
+    }).join(' ');
+    chartHtml = `
+      <div class="chart-container">
+        <svg class="chart-svg" viewBox="0 0 300 160" preserveAspectRatio="none">
+          <polyline points="${points}" fill="none" stroke="var(--button)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+      </div>
+    `;
+  } else {
+    chartHtml = 'Нет данных для графика';
+  }
+  document.getElementById('chartBlock').innerHTML = chartHtml;
+
+  // Цели
+  let goalsHtml = '';
+  if (state.goals.length === 0) goalsHtml = 'Нет целей';
+  else {
+    goalsHtml = state.goals.map((g, idx) => {
+      let pct = Math.min(100, (g.saved / g.target) * 100);
+      return `
+        <div class="goal">
+          <div class="goal-head"><span><b>${g.name}</b></span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
+          <div class="bar"><div style="width:${pct}%"></div></div>
+          <button class="secondary small" onclick="state.goals.splice(${idx},1); saveState(); render();" style="margin-top:6px; width:auto; font-size:12px;">Удалить</button>
+        </div>
+      `;
+    }).join('');
+  }
+  document.getElementById('goals').innerHTML = goalsHtml;
+
+  // Wishlist
+  let wishHtml = '';
+  if (state.wishes.length === 0) wishHtml = 'Пусто';
+  else {
+    wishHtml = state.wishes.map((w, idx) => `
+      <div class="wish-item priority-${w.priority}">
+        <div class="wish-body">
+          <div class="wish-title">${w.name}</div>
+          <div class="muted">${fmt(w.saved)} из ${fmt(w.price)}</div>
+        </div>
+        <button class="secondary small" onclick="state.wishes.splice(${idx},1); saveState(); render();" style="width:auto;">✕</button>
+      </div>
+    `).join('');
+  }
+  document.getElementById('wishlist').innerHTML = wishHtml;
+
+  // Помощник
+  let advice = [];
+  if (balances.shared < 0) advice.push('<div class="advice-item danger">🚨 Вы ушли в минус по общему бюджету!</div>');
+  else if (balances.shared > 0) advice.push(`<div class="advice-item ok">✅ В общем бюджете осталось ${fmt(balances.shared)}.</div>`);
+
+  state.limits.forEach(l => {
+    let s = getLimitStatus(l);
+    if (s.level === 'danger') advice.push(`<div class="advice-item danger">🚨 Лимит «${l.name}» превышен!</div>`);
+    else if (s.level === 'warn') advice.push(`<div class="advice-item warn">🟡 Лимит «${l.name}» почти исчерпан.</div>`);
+  });
+
+  document.getElementById('adviceBlock').innerHTML = advice.join('');
+
   // История
   let list = document.getElementById('txList');
   if (state.transactions.length === 0) {
-    list.innerHTML = '<div class="muted">Пока нет трат</div>';
+    list.innerHTML = 'Пока нет трат';
   } else {
     list.innerHTML = state.transactions.map(tx => {
-      let srcName = tx.source === 'shared' ? 'Общий бюджет' : (tx.source === 'personalA' ? 'Личный (Вы)' : 'Личный (Партнёр)');
+      let srcName = tx.source === 'shared' ? 'Общий' : (tx.source === 'personalA' ? 'Личный (Вы)' : 'Личный (Партнёр)');
       return `
         <div class="tx">
-          <div>
-            <div><b>${tx.category}</b></div>
-            <div class="muted" style="font-size: 12px;">${srcName} · ${tx.date}</div>
-          </div>
+          <div><div><b>${tx.category}</b></div><div class="muted" style="font-size: 12px;">${srcName} · ${tx.date}</div></div>
           <div class="negative" style="font-weight: bold;">−${fmt(tx.amount)}</div>
         </div>
       `;
@@ -256,7 +459,6 @@ function render() {
   }
 }
 
-// --- СТАРТ ---
 loadState();
 render();
 </script>
