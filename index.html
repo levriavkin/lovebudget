@@ -374,13 +374,34 @@ function getLimitStatus(limitObj) {
 
 // --- РЕДАКТИРОВАНИЕ ТРАТ (СПОСОБ: УДАЛИТЬ И ДОБАВИТЬ) ---
 async function editTx(tx) {
-  // Внимание: Сервер пока не поддерживает прямое редактирование, 
-  // поэтому мы просто предложим удалить старую и создать новую.
-  if(!confirm(`Удалить старую запись "${tx.category}" на ${fmt(tx.amount)}, чтобы ввести новую?`)) return;
+  if (!tx.id) {
+    return alert("Сервер не передал ID этой записи. Пожалуйста, обновите сервер.");
+  }
 
-  // В реальном проекте здесь был бы DELETE запрос к /api/delete_tx
-  // Но так как в серверном коде api.py его нет, мы просто уведомляем.
-  alert("Для изменения просто добавьте новую правильную трату, а эту оставьте (или очистите историю в базе Render).");
+  // Спрашиваем новые данные
+  let newAmount = prompt(`Изменить сумму для "${tx.category}"? (Было: ${tx.amount})`, tx.amount);
+  if (newAmount === null) return; // Пользователь нажал "Отмена"
+  newAmount = +newAmount;
+
+  let newCategory = prompt(`Изменить категорию?`, tx.category);
+  if (newCategory === null) return;
+  newCategory = newCategory.trim() || 'Без категории';
+
+  if (newAmount <= 0) return alert("Сумма должна быть больше 0");
+
+  try {
+    // 1. Удаляем старую запись
+    await fetch(`${BACKEND_URL}/api/delete_tx?tx_id=${tx.id}&user_id=${userId}`, { method: 'DELETE' });
+    
+    // 2. Создаем новую с правильными данными
+    await fetch(`${BACKEND_URL}/api/add_tx?user_id=${userId}&amount=${newAmount}&category=${encodeURIComponent(newCategory)}&source=${tx.source}`, { method: 'POST' });
+    
+    // 3. Обновляем экран
+    await loadData();
+    alert("Запись успешно обновлена!");
+  } catch (e) {
+    alert("Ошибка при редактировании. Проверьте интернет.");
+  }
 }
 
 // --- ОТРИСОВКА ---
