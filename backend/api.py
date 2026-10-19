@@ -122,6 +122,7 @@ async def cb_main_menu(call: types.CallbackQuery):
 
 @dp.message(CommandStart(deep_link=True))
 async def cmd_start_deeplink(message: types.Message, command: CommandObject):
+     logger.info(f"🚨 ВНИМАНИЕ! БОТ ПОЛУЧИЛ ССЫЛКУ. Аргументы: '{command.args}'") 
     args = command.args
     # Этот лог покажет, что вообще пришло в боте
     logger.info(f"🔗 ССЫЛКА: получены аргументы '{args}' от пользователя {message.from_user.id}")
