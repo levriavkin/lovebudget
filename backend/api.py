@@ -141,7 +141,7 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
-    await bot.set_webhook(webhook_url, drop_pending_updates=True)
+    #await bot.set_webhook(webhook_url, drop_pending_updates=True)
     logger.info(f"Webhook set to {webhook_url}")
     yield
     await bot.delete_webhook()
