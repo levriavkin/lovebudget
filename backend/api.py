@@ -27,6 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- БАЗА ДАННЫХ ---
+# Используем /tmp для надежности на бесплатном Render
 DATABASE_URL = "sqlite:////tmp/database.db" 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
@@ -57,19 +58,55 @@ def get_main_kb():
 # --- ОБРАБОТЧИКИ БОТА ---
 
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, command: CommandObject = None):
     try:
         user_id = message.from_user.id
+        args = command.args if command else None
+        
+        # Логируем всё, что пришло
+        logger.info(f"🔗 КОМАНДА /start. Аргументы: '{args}' от пользователя {user_id}")
+
+        # 1. ЕСЛИ ЭТО ССЫЛКА-ПРИГЛАШЕНИЕ
+        if args and args.startswith("pair_"):
+            try:
+                partner_id = int(args.replace("pair_", ""))
+                logger.info(f"🤝 Попытка связать: {user_id} и {partner_id}")
+                
+                if partner_id == user_id:
+                    await message.answer("Нельзя пригласить самого себя 🙂")
+                    return
+
+                with Session(engine) as session:
+                    user = session.get(User, user_id)
+                    partner = session.get(User, partner_id)
+                    
+                    if not user: 
+                        user = User(id=user_id)
+                        session.add(user)
+                    if not partner: 
+                        partner = User(id=partner_id)
+                        session.add(partner)
+                    
+                    user.partner_id = partner_id
+                    partner.partner_id = user_id
+                    session.commit()
+                    logger.info(f"✅ УСПЕХ: {user_id} и {partner_id} теперь пара!")
+                
+                await message.answer("🎉 Отлично! Вы связаны как пара. Откройте бюджет.", reply_markup=get_main_kb())
+                return
+            except Exception as e:
+                logger.error(f"❌ ОШИБКА СВЯЗЫВАНИЯ: {e}")
+                await message.answer("Ошибка связывания. Попробуйте позже.")
+                return
+
+        # 2. ЕСЛИ ЭТО ОБЫЧНЫЙ СТАРТ (без ссылки)
         with Session(engine) as session:
             user = session.get(User, user_id)
-            if user and user.partner_id:
-                partner_status = f"✅ Вы в паре с ID: {user.partner_id}"
-            else:
-                partner_status = "❌ Партнёр не привязан"
+            partner_text = f"✅ Вы в паре с ID: {user.partner_id}" if user and user.partner_id else "❌ Партнёр не привязан"
         
         name = message.from_user.first_name or "друг"
         await message.answer(
-            f"Привет, {name}! 👋\n\n{partner_status}\n\nЭто LoveBudget.", 
+            f"Привет, {name}! 👋\n\n{partner_text}\n\nЭто LoveBudget.", 
             reply_markup=get_main_kb()
         )
     except Exception as e:
@@ -116,57 +153,21 @@ async def cb_main_menu(call: types.CallbackQuery):
         logger.error(f"Ошибка в cb_main_menu: {e}")
         await call.message.answer("Ошибка. Попробуйте позже.")
 
-@dp.message(CommandStart(deep_link=True))
-async def cmd_start_deeplink(message: types.Message, command: CommandObject):
-    args = command.args
-    logger.info(f"🔗 ССЫЛКА: получены аргументы '{args}' от пользователя {message.from_user.id}")
-    
-    if args and args.startswith("pair_"):
-        try:
-            partner_id = int(args.replace("pair_", ""))
-            user_id = message.from_user.id
-            
-            logger.info(f"🤝 Попытка связать: {user_id} (новый) и {partner_id} (пригласивший)")
-            
-            if partner_id == user_id:
-                await message.answer("Нельзя пригласить самого себя 🙂")
-                return
-
-            with Session(engine) as session:
-                user = session.get(User, user_id)
-                partner = session.get(User, partner_id)
-                
-                if not user: 
-                    user = User(id=user_id)
-                    session.add(user)
-                if not partner: 
-                    partner = User(id=partner_id)
-                    session.add(partner)
-                
-                user.partner_id = partner_id
-                partner.partner_id = user_id
-                
-                session.commit()
-                logger.info(f"✅ УСПЕХ: {user_id} и {partner_id} теперь пара!")
-            
-            await message.answer("🎉 Отлично! Вы связаны как пара. Откройте бюджет.", reply_markup=get_main_kb())
-            
-        except Exception as e:
-            logger.error(f"❌ ОШИБКА СВЯЗЫВАНИЯ: {e}")
-            await message.answer("Произошла ошибка при связывании. Попробуйте позже.")
-    else:
-        logger.info("Ссылка без параметра. Вызываю обычный /start.")
-        await cmd_start(message)
-
 # --- FASTAPI APP ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
+    
+    # Устанавливаем вебхук при каждом запуске
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
-    # Раскомментируйте строку ниже, чтобы сервер сам ставил вебхук:
-    await bot.set_webhook(webhook_url, drop_pending_updates=True)
-    logger.info(f"Webhook set to {webhook_url}")
+    try:
+        await bot.set_webhook(webhook_url, drop_pending_updates=True)
+        logger.info(f"✅ Webhook успешно установлен: {webhook_url}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка установки вебхука: {e}")
+        
     yield
+    
     await bot.delete_webhook()
     await bot.session.close()
 
