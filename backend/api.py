@@ -1,27 +1,37 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from typing import Optional
 import time
+import os
+import logging
+from contextlib import asynccontextmanager
 
-# База данных (создастся сама)
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart, CommandObject, Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from dotenv import load_dotenv
+
+# --- ЗАГРУЗКА НАСТРОЕК ---
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://levriavkin.github.io/lovebudget/")
+# Ссылка на этот же сервис Render (для установки вебхука)
+RENDER_URL = os.getenv("RENDER_URL", "https://lovebudget-u4ez.onrender.com") 
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден!")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- БАЗА ДАННЫХ ---
 DATABASE_URL = "sqlite:///./database.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-app = FastAPI()
-
-# Разрешаем запросы с вашего сайта на GitHub Pages
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- МОДЕЛИ ДАННЫХ ---
 class User(SQLModel, table=True):
-    id: int = Field(primary_key=True)  # Telegram ID
-    partner_id: Optional[int] = None   # ID партнёра
+    id: int = Field(primary_key=True)
+    partner_id: Optional[int] = None
     name: str = "Пользователь"
     income: float = 0.0
 
@@ -30,90 +40,131 @@ class Transaction(SQLModel, table=True):
     user_id: int
     amount: float
     category: str
-    source: str  # shared, personalA, personalB
+    source: str
     timestamp: float
 
-# Создаем таблицы при запуске
-@app.on_event("startup")
-def on_startup():
-    SQLModel.metadata.create_all(engine)
+# --- ИНИЦИАЛИЗАЦИЯ БОТА ---
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
-def get_session():
-    with Session(engine) as session:
-        yield session
+# --- ОБРАБОТЧИКИ БОТА ---
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
+    name = message.from_user.first_name or "друг"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Открыть бюджет", web_app=WebAppInfo(url=WEBAPP_URL))],
+        [InlineKeyboardButton(text="👥 Пригласить партнёра", callback_data="invite")]
+    ])
+    await message.answer(f"Привет, {name}! 👋\n\nЭто LoveBudget. Нажми кнопку ниже.", reply_markup=kb)
 
-# --- ЭНДПОИНТЫ ---
+@dp.callback_query(lambda c: c.data == "invite")
+async def cb_invite(call: types.CallbackQuery):
+    await call.answer()
+    user_id = call.from_user.id
+    bot_username = (await bot.get_me()).username
+    invite_link = f"https://t.me/{bot_username}?start=pair_{user_id}"
+    
+    text = f"<b>👥 Пригласите партнёра</b>\n\n<code>{invite_link}</code>"
+    share_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
+    ])
+    await call.message.edit_text(text, reply_markup=share_kb, parse_mode="HTML")
 
+@dp.callback_query(lambda c: c.data == "main_menu")
+async def cb_main_menu(call: types.CallbackQuery):
+    await call.answer()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Открыть бюджет", web_app=WebAppInfo(url=WEBAPP_URL))],
+        [InlineKeyboardButton(text="👥 Пригласить партнёра", callback_data="invite")]
+    ])
+    await call.message.edit_text("Главное меню:", reply_markup=kb)
+
+@dp.message(CommandStart(deep_link=True))
+async def cmd_start_deeplink(message: types.Message, command: CommandObject):
+    args = command.args
+    if args and args.startswith("pair_"):
+        try:
+            partner_id = int(args.replace("pair_", ""))
+            user_id = message.from_user.id
+            if partner_id == user_id:
+                await message.answer("Нельзя пригласить самого себя 🙂")
+                return
+
+            # Связываем в БД
+            with Session(engine) as session:
+                user = session.get(User, user_id)
+                partner = session.get(User, partner_id)
+                if not user: user = User(id=user_id); session.add(user)
+                if not partner: partner = User(id=partner_id); session.add(partner)
+                user.partner_id = partner_id
+                partner.partner_id = user_id
+                session.commit()
+            
+            await message.answer("🎉 Отлично! Вы связаны как пара.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💰 Открыть бюджет", web_app=WebAppInfo(url=WEBAPP_URL))]
+            ]))
+        except Exception as e:
+            logger.error(f"Link error: {e}")
+            await message.answer("Ошибка связывания.")
+    else:
+        await cmd_start(message)
+
+# --- FASTAPI APP ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # При запуске сервера устанавливаем вебхук
+    webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
+    await bot.set_webhook(webhook_url)
+    logger.info(f"Webhook set to {webhook_url}")
+    yield
+    # При остановке удаляем
+    await bot.delete_webhook()
+    await bot.session.close()
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Эндпоинт для приема сообщений от Telegram
+@app.post(f"/webhook/{BOT_TOKEN}")
+async def telegram_webhook(request: Request):
+    update_data = await request.json()
+    update = types.Update(**update_data)
+    await dp.feed_update(bot, update)
+    return {"ok": True}
+
+# --- ВАШИ СУЩЕСТВУЮЩИЕ API ЭНДПОИНТЫ ---
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "LoveBudget Backend работает!"}
+    return {"status": "ok", "message": "LoveBudget Full Service"}
 
-# 1. Синхронизация (получить данные пользователя, партнёра и все траты)
 @app.get("/api/sync")
-def sync_data(user_id: int, session: Session = Depends(get_session)):
+def sync_data(user_id: int, session: Session = Depends(lambda: Session(engine))):
     user = session.get(User, user_id)
     if not user:
-        user = User(id=user_id)
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
+        user = User(id=user_id); session.add(user); session.commit(); session.refresh(user)
     partner = session.get(User, user.partner_id) if user.partner_id else None
-
-    # Получаем траты обоих партнёров
     user_ids = [user.id]
-    if partner:
-        user_ids.append(partner.id)
-    
+    if partner: user_ids.append(partner.id)
     transactions = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids))).all()
-    
     return {"user": user, "partner": partner, "transactions": transactions}
 
-# 2. Сохранить настройки (имя, доход)
 @app.post("/api/setup")
-def setup_user(user_id: int, name: str, income: float, session: Session = Depends(get_session)):
+def setup_user(user_id: int, name: str, income: float, session: Session = Depends(lambda: Session(engine))):
     user = session.get(User, user_id)
-    if not user:
-        user = User(id=user_id)
-    user.name = name
-    user.income = income
-    session.add(user)
-    session.commit()
+    if not user: user = User(id=user_id)
+    user.name = name; user.income = income
+    session.add(user); session.commit()
     return {"status": "success"}
 
-# 3. Добавить трату
 @app.post("/api/add_tx")
-def add_transaction(user_id: int, amount: float, category: str, source: str, session: Session = Depends(get_session)):
+def add_transaction(user_id: int, amount: float, category: str, source: str, session: Session = Depends(lambda: Session(engine))):
     tx = Transaction(user_id=user_id, amount=amount, category=category, source=source, timestamp=time.time())
-    session.add(tx)
-    session.commit()
+    session.add(tx); session.commit()
     return {"status": "success"}
-
-# 4. Привязать партнёра (вызывается из бота)
-@app.post("/api/link_partner")
-def link_partner(user_id: int, partner_id: int, session: Session = Depends(get_session)):
-    user = session.get(User, user_id)
-    partner = session.get(User, partner_id)
-    if not user or not partner:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    
-    user.partner_id = partner_id
-    partner.partner_id = user_id
-    session.add(user)
-    session.add(partner)
-    session.commit()
-    return {"status": "linked"}
-# 5. Удалить трату (для редактирования)
-@app.delete("/api/delete_tx")
-def delete_transaction(tx_id: int, user_id: int, session: Session = Depends(get_session)):
-    tx = session.get(Transaction, tx_id)
-    if not tx:
-        raise HTTPException(status_code=404, detail="Транзакция не найдена")
-    
-    # Проверка безопасности: удалять может только тот, кто создал
-    if tx.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Нет прав на удаление")
-    
-    session.delete(tx)
-    session.commit()
-    return {"status": "deleted"}
