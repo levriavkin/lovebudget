@@ -17,19 +17,10 @@
     --negative: #ff3b30;
     --warn: #ff9500;
     --border-soft: rgba(150,150,150,0.2);
-    --soft: rgba(150,150,150,0.1);
-    --grid-line: rgba(150,150,150,0.3);
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  
-  body { 
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-    margin: 0; padding: 16px 12px 60px; 
-    background: var(--bg); color: var(--text); 
-    line-height: 1.4;
-  }
-
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 16px 12px 60px; background: var(--bg); color: var(--text); line-height: 1.4; }
   h1 { font-size: 24px; margin: 0 0 4px; font-weight: bold; }
   h3 { margin: 0 0 12px; font-size: 16px; color: var(--text); font-weight: 600; }
   
@@ -37,12 +28,8 @@
   .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
   .row > * { flex: 1; min-width: 100px; }
   
-  input, select, button { 
-    padding: 12px; border-radius: 10px; border: none; font-size: 15px; 
-    background: var(--bg); color: var(--text); width: 100%; outline: none;
-  }
+  input, select, button { padding: 12px; border-radius: 10px; border: none; font-size: 15px; background: var(--bg); color: var(--text); width: 100%; outline: none; }
   input::placeholder { color: var(--hint); }
-  
   button { background: var(--button); color: var(--button-text); font-weight: 600; cursor: pointer; }
   button.secondary { background: var(--bg); color: var(--text); font-weight: normal; }
   
@@ -63,11 +50,9 @@
   .advice-item.danger { border-left-color: var(--negative); }
   .advice-item.ok { border-left-color: var(--positive); }
 
-  /* График */
   .chart-container { background: var(--bg); border-radius: 10px; padding: 12px 4px 4px; margin-top: 12px; }
   .chart-svg { width: 100%; height: 180px; display: block; }
 
-  /* Лимиты */
   .limit-item { padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 10px; border-left: 3px solid var(--button); }
   .limit-item.warn { border-left-color: var(--warn); }
   .limit-item.danger { border-left-color: var(--negative); }
@@ -78,13 +63,11 @@
   .limit-bar > div.warn { background: var(--warn); }
   .limit-bar > div.danger { background: var(--negative); }
 
-  /* Цели */
   .goal { margin-bottom: 14px; }
   .goal-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
   .bar { background: var(--border-soft); border-radius: 6px; height: 10px; overflow: hidden; }
   .bar > div { height: 100%; background: var(--button); transition: width .3s; }
 
-  /* Wishlist */
   .wish-item { padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .wish-item.priority-high { border-left: 3px solid var(--negative); }
   .wish-item.priority-medium { border-left: 3px solid var(--warn); }
@@ -96,7 +79,7 @@
 <body>
 
 <h1>💑 LoveBudget</h1>
-<div class="muted" style="margin-bottom: 16px;">Умный бюджет для двоих</div>
+<div class="muted" style="margin-bottom: 16px;" id="partnerStatus">Загрузка данных...</div>
 
 <!-- НАСТРОЙКИ -->
 <div class="card">
@@ -106,10 +89,10 @@
     <input id="incomeA" type="number" placeholder="Ваш доход, ₽">
   </div>
   <div class="row">
-    <input id="nameB" placeholder="Имя партнёра">
-    <input id="incomeB" type="number" placeholder="Доход партнёра, ₽">
+    <input id="nameB" placeholder="Имя партнёра" readonly style="opacity: 0.6;">
+    <input id="incomeB" type="number" placeholder="Доход партнёра, ₽" readonly style="opacity: 0.6;">
   </div>
-  <button onclick="saveSetup()">Сохранить</button>
+  <button onclick="saveSetup()">Сохранить мой доход</button>
   <div id="splitInfo" class="muted" style="margin-top: 12px;"></div>
 </div>
 
@@ -149,7 +132,7 @@
   </div>
 </div>
 
-<!-- ЛИМИТЫ -->
+<!-- ЛИМИТЫ (Локально) -->
 <div class="card">
   <h3>🎚️ Лимиты по категориям</h3>
   <div class="row">
@@ -166,7 +149,7 @@
   <div id="chartBlock" class="muted">Нет данных</div>
 </div>
 
-<!-- ЦЕЛИ -->
+<!-- ЦЕЛИ (Локально) -->
 <div class="card">
   <h3>🎯 Общие цели</h3>
   <div class="row">
@@ -178,7 +161,7 @@
   <div id="goals" class="muted">Нет целей</div>
 </div>
 
-<!-- WISHLIST -->
+<!-- WISHLIST (Локально) -->
 <div class="card">
   <h3>🛍️ Несрочные покупки</h3>
   <div class="row">
@@ -208,73 +191,119 @@
 </div>
 
 <script>
+// ==========================================
+// ВАША ССЫЛКА С RENDER
+// ==========================================
+const BACKEND_URL = "https://lovebudget-u4ez.onrender.com"; 
+
+// Получаем данные из Telegram
+let tgUser = null;
 try {
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
+    tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
   }
 } catch(e) {}
+
+const userId = tgUser ? tgUser.id : 12345; // 12345 для теста в браузере
 
 // --- ДАННЫЕ ---
 let state = {
   partnerA: { name: '', income: 0 },
   partnerB: { name: '', income: 0 },
   transactions: [],
-  limits: [],
+  limits: [], // Лимиты пока храним локально
   goals: [],
   wishes: []
 };
 
 function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
-function fmtShort(n) { return n >= 1000 ? Math.round(n/1000) + 'k' : Math.round(n); }
 
-function saveState() { try { localStorage.setItem('lovebudget_v7', JSON.stringify(state)); } catch(e) {} }
-function loadState() {
+// Загрузка данных с сервера
+async function loadData() {
   try {
-    let saved = localStorage.getItem('lovebudget_v7');
-    if (saved) {
-      state = Object.assign(state, JSON.parse(saved));
+    const res = await fetch(`${BACKEND_URL}/api/sync?user_id=${userId}`);
+    const data = await res.json();
+    
+    if (data.user) {
+      state.partnerA.name = data.user.name || tgUser?.first_name || 'Вы';
+      state.partnerA.income = data.user.income || 0;
     }
-  } catch(e) {}
+    if (data.partner) {
+      state.partnerB.name = data.partner.name || 'Партнёр';
+      state.partnerB.income = data.partner.income || 0;
+    }
+    
+    // Загружаем транзакции с сервера
+    state.transactions = data.transactions || [];
+
+    // Загружаем лимиты/цели/wishes из локальной памяти (они пока не на сервере)
+    loadLocalItems();
+
+    document.getElementById('partnerStatus').textContent = data.partner 
+      ? `Связаны с: ${data.partner.name}` 
+      : 'Партнёр ещё не привязан (нажмите "Пригласить" в боте)';
+
+    render();
+  } catch (e) {
+    console.error("Ошибка сети:", e);
+    document.getElementById('partnerStatus').textContent = 'Ошибка сервера. Обновите страницу.';
+  }
 }
 
-// --- ЛОГИКА ---
-function saveSetup() {
-  state.partnerA.name = document.getElementById('nameA').value || 'Вы';
-  state.partnerA.income = +document.getElementById('incomeA').value || 0;
-  state.partnerB.name = document.getElementById('nameB').value || 'Партнёр';
-  state.partnerB.income = +document.getElementById('incomeB').value || 0;
-  saveState();
-  render();
+// Сохранение настроек на сервер
+async function saveSetup() {
+  let name = document.getElementById('nameA').value || 'Пользователь';
+  let income = +document.getElementById('incomeA').value || 0;
+  
+  try {
+    await fetch(`${BACKEND_URL}/api/setup?user_id=${userId}&name=${encodeURIComponent(name)}&income=${income}`, { method: 'POST' });
+    await loadData();
+  } catch (e) {
+    alert('Не удалось сохранить. Проверьте интернет.');
+  }
 }
 
-function addTx() {
+// Добавление траты на сервер
+async function addTx() {
   let amount = +document.getElementById('txAmount').value;
   let category = document.getElementById('txCategory').value.trim() || 'Без категории';
   let source = document.getElementById('txSource').value;
 
   if (!amount || amount <= 0) return alert('Введите сумму больше 0');
 
-  let balances = calculateBalances();
-  if (source === 'shared' && balances.shared < amount) return alert('Недостаточно средств в общем бюджете!');
-  if (source === 'personalA' && balances.walletA < amount) return alert('Недостаточно личных средств!');
-  if (source === 'personalB' && balances.walletB < amount) return alert('Недостаточно личных средств партнёра!');
-
-  state.transactions.unshift({
-    amount, category, source, date: new Date().toLocaleDateString('ru-RU')
-  });
-  document.getElementById('txAmount').value = '';
-  document.getElementById('txCategory').value = '';
-  saveState();
-  render();
+  try {
+    await fetch(`${BACKEND_URL}/api/add_tx?user_id=${userId}&amount=${amount}&category=${encodeURIComponent(category)}&source=${source}`, { method: 'POST' });
+    document.getElementById('txAmount').value = '';
+    document.getElementById('txCategory').value = '';
+    await loadData();
+  } catch (e) {
+    alert('Не удалось добавить трату. Проверьте интернет.');
+  }
 }
 
-function clearHistory() {
-  if (confirm('Удалить все траты?')) {
+async function clearHistory() {
+  if (confirm('Очистить историю (только локально)?')) {
     state.transactions = [];
-    saveState();
     render();
   }
+}
+
+// --- ЛОКАЛЬНЫЕ ФУНКЦИИ (для лимитов, целей, wishlist) ---
+function saveLocalItems() {
+  try { localStorage.setItem('lovebudget_local', JSON.stringify({ limits: state.limits, goals: state.goals, wishes: state.wishes })); } catch(e) {}
+}
+function loadLocalItems() {
+  try {
+    let saved = localStorage.getItem('lovebudget_local');
+    if (saved) {
+      let parsed = JSON.parse(saved);
+      state.limits = parsed.limits || [];
+      state.goals = parsed.goals || [];
+      state.wishes = parsed.wishes || [];
+    }
+  } catch(e) {}
 }
 
 function addLimit() {
@@ -282,7 +311,7 @@ function addLimit() {
   let limit = +document.getElementById('limitAmount').value;
   if (!name || limit <= 0) return alert('Заполните поля');
   state.limits.push({ name, limit });
-  saveState();
+  saveLocalItems();
   render();
 }
 
@@ -292,7 +321,7 @@ function addGoal() {
   let months = +document.getElementById('goalMonths').value || 12;
   if (!name || target <= 0) return alert('Заполните поля');
   state.goals.push({ name, target, saved: 0, monthsLeft: months });
-  saveState();
+  saveLocalItems();
   render();
 }
 
@@ -302,7 +331,7 @@ function addWish() {
   let priority = document.getElementById('wishPriority').value;
   if (!name || price <= 0) return alert('Заполните поля');
   state.wishes.push({ name, price, priority, saved: 0 });
-  saveState();
+  saveLocalItems();
   render();
 }
 
@@ -326,7 +355,7 @@ function calculateBalances() {
 
 function getLimitStatus(limitObj) {
   let spent = state.transactions.filter(tx => tx.category === limitObj.name && tx.source === 'shared').reduce((s, tx) => s + tx.amount, 0);
-  let pct = (spent / limitObj.limit) * 100;
+  let pct = (limitObj.limit > 0) ? (spent / limitObj.limit) * 100 : 0;
   let level = pct >= 100 ? 'danger' : pct >= 80 ? 'warn' : 'ok';
   return { spent, pct, level };
 }
@@ -365,7 +394,7 @@ function render() {
           <div class="limit-head">
             <span><b>${l.name}</b></span>
             <span>${fmt(s.spent)} / ${fmt(l.limit)} <span class="badge ${s.level}">${s.pct.toFixed(0)}%</span>
-            <button class="secondary small" onclick="state.limits.splice(${idx},1); saveState(); render();" style="width:auto; padding:2px 8px; margin-left:6px;">✕</button></span>
+            <button class="secondary small" onclick="state.limits.splice(${idx},1); saveLocalItems(); render();" style="width:auto; padding:2px 8px; margin-left:6px;">✕</button></span>
           </div>
           <div class="limit-bar"><div class="${s.level}" style="width:${w}%"></div></div>
         </div>
@@ -374,7 +403,7 @@ function render() {
   }
   document.getElementById('limitsList').innerHTML = limitsHtml;
 
-  // График (простой)
+  // График
   let chartHtml = '';
   let recentTx = state.transactions.slice(0, 10).reverse();
   if (recentTx.length > 1) {
@@ -406,7 +435,7 @@ function render() {
         <div class="goal">
           <div class="goal-head"><span><b>${g.name}</b></span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
           <div class="bar"><div style="width:${pct}%"></div></div>
-          <button class="secondary small" onclick="state.goals.splice(${idx},1); saveState(); render();" style="margin-top:6px; width:auto; font-size:12px;">Удалить</button>
+          <button class="secondary small" onclick="state.goals.splice(${idx},1); saveLocalItems(); render();" style="margin-top:6px; width:auto; font-size:12px;">Удалить</button>
         </div>
       `;
     }).join('');
@@ -423,7 +452,7 @@ function render() {
           <div class="wish-title">${w.name}</div>
           <div class="muted">${fmt(w.saved)} из ${fmt(w.price)}</div>
         </div>
-        <button class="secondary small" onclick="state.wishes.splice(${idx},1); saveState(); render();" style="width:auto;">✕</button>
+        <button class="secondary small" onclick="state.wishes.splice(${idx},1); saveLocalItems(); render();" style="width:auto;">✕</button>
       </div>
     `).join('');
   }
@@ -451,7 +480,7 @@ function render() {
       let srcName = tx.source === 'shared' ? 'Общий' : (tx.source === 'personalA' ? 'Личный (Вы)' : 'Личный (Партнёр)');
       return `
         <div class="tx">
-          <div><div><b>${tx.category}</b></div><div class="muted" style="font-size: 12px;">${srcName} · ${tx.date}</div></div>
+          <div><div><b>${tx.category}</b></div><div class="muted" style="font-size: 12px;">${srcName}</div></div>
           <div class="negative" style="font-weight: bold;">−${fmt(tx.amount)}</div>
         </div>
       `;
@@ -459,8 +488,8 @@ function render() {
   }
 }
 
-loadState();
-render();
+// --- СТАРТ ---
+loadData();
 </script>
 </body>
 </html>
