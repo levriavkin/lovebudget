@@ -8,29 +8,27 @@ import logging
 from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, CommandObject
+from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from dotenv import load_dotenv
 
-# --- ЗАГРУЗКА НАСТРОЕК ---
+# --- НАСТРОЙКИ ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://levriavkin.github.io/lovebudget/")
-# Ссылка на ваш сервис Render (нужна для установки вебхука)
 RENDER_URL = os.getenv("RENDER_URL", "https://lovebudget-u4ez.onrender.com") 
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не найден! Проверьте переменные на Render.")
+    raise ValueError("BOT_TOKEN не найден!")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- БАЗА ДАННЫХ ---
-# Используем /tmp, так как на бесплатном Render папка проекта может быть защищена от записи
+# Используем /tmp для надежности на Render
 DATABASE_URL = "sqlite:////tmp/database.db" 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-# --- МОДЕЛИ ---
 class User(SQLModel, table=True):
     id: int = Field(primary_key=True)
     partner_id: Optional[int] = None
@@ -45,11 +43,10 @@ class Transaction(SQLModel, table=True):
     source: str
     timestamp: float
 
-# --- ИНИЦИАЛИЗАЦИЯ БОТА ---
+# --- БОТ ---
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- КЛАВИАТУРЫ ---
 def get_main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Открыть бюджет", web_app=WebAppInfo(url=WEBAPP_URL))],
@@ -61,6 +58,10 @@ def get_main_kb():
 async def cmd_start(message: types.Message):
     name = message.from_user.first_name or "друг"
     await message.answer(f"Привет, {name}! 👋\n\nЭто LoveBudget. Нажми кнопку ниже.", reply_markup=get_main_kb())
+
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer("Нажми «💰 Открыть бюджет» или «👥 Пригласить партнёра».", reply_markup=get_main_kb())
 
 @dp.callback_query(lambda c: c.data == "invite")
 async def cb_invite(call: types.CallbackQuery):
@@ -96,7 +97,6 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
                 await message.answer("Нельзя пригласить самого себя 🙂")
                 return
 
-            # Связываем в БД
             with Session(engine) as session:
                 user = session.get(User, user_id)
                 partner = session.get(User, partner_id)
@@ -116,12 +116,12 @@ async def cmd_start_deeplink(message: types.Message, command: CommandObject):
 # --- FASTAPI APP ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ВАЖНО: Создаем таблицы при каждом запуске сервера (на случай очистки /tmp)
+    # Создаем таблицы
     SQLModel.metadata.create_all(engine)
-    logger.info("Таблицы базы данных проверены/созданы.")
-
+    
+    # Устанавливаем вебхук (с разрешением на все типы сообщений)
     webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
-    await bot.set_webhook(webhook_url)
+    await bot.set_webhook(webhook_url, drop_pending_updates=True)
     logger.info(f"Webhook set to {webhook_url}")
     
     yield
@@ -145,7 +145,7 @@ async def telegram_webhook(request: Request):
     await dp.feed_update(bot, update)
     return {"ok": True}
 
-# --- API ЭНДПОИНТЫ ---
+# --- API ДЛЯ ПРИЛОЖЕНИЯ ---
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "LoveBudget Full Service"}
@@ -154,43 +154,31 @@ def read_root():
 def sync_data(user_id: int, session: Session = Depends(lambda: Session(engine))):
     user = session.get(User, user_id)
     if not user:
-        user = User(id=user_id)
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-    
+        user = User(id=user_id); session.add(user); session.commit(); session.refresh(user)
     partner = session.get(User, user.partner_id) if user.partner_id else None
     user_ids = [user.id]
-    if partner: 
-        user_ids.append(partner.id)
-    
+    if partner: user_ids.append(partner.id)
     transactions = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids))).all()
     return {"user": user, "partner": partner, "transactions": transactions}
 
 @app.post("/api/setup")
 def setup_user(user_id: int, name: str, income: float, session: Session = Depends(lambda: Session(engine))):
     user = session.get(User, user_id)
-    if not user: 
-        user = User(id=user_id)
-    user.name = name
-    user.income = income
-    session.add(user)
-    session.commit()
+    if not user: user = User(id=user_id)
+    user.name = name; user.income = income
+    session.add(user); session.commit()
     return {"status": "success"}
 
 @app.post("/api/add_tx")
 def add_transaction(user_id: int, amount: float, category: str, source: str, session: Session = Depends(lambda: Session(engine))):
     tx = Transaction(user_id=user_id, amount=amount, category=category, source=source, timestamp=time.time())
-    session.add(tx)
-    session.commit()
+    session.add(tx); session.commit()
     return {"status": "success"}
 
-# --- ОПЦИОНАЛЬНО: ЭНДПОИНТ ДЛЯ УДАЛЕНИЯ ТРАТ (для функции редактирования) ---
 @app.delete("/api/delete_tx")
 def delete_transaction(tx_id: int, user_id: int, session: Session = Depends(lambda: Session(engine))):
     tx = session.get(Transaction, tx_id)
     if tx and tx.user_id == user_id:
-        session.delete(tx)
-        session.commit()
+        session.delete(tx); session.commit()
         return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Не найдено или нет прав")
+    raise HTTPException(status_code=404, detail="Не найдено")
