@@ -6,106 +6,257 @@
 <title>LoveBudget</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
+  /* --- GLASSMORPHISM DARK GREEN THEME --- */
   :root {
-    --bg: var(--tg-theme-bg-color, #f2f2f7); --card: var(--tg-theme-secondary-bg-color, #ffffff);
-    --text: var(--tg-theme-text-color, #000); --hint: var(--tg-theme-hint-color, #8e8e93);
-    --button: var(--tg-theme-button-color, #007aff); --positive: #34c759; --negative: #ff3b30;
-    --border-soft: rgba(150,150,150,0.2);
+    --bg-dark: #121E18;      /* Глубокий лесной */
+    --bg-card: rgba(30, 46, 38, 0.7); /* Полупрозрачная карточка */
+    --bg-card-solid: #1E2E26;
+    --text-main: #E8F0EA;    /* Светло-зеленоватый белый */
+    --text-muted: #8DA394;   /* Приглушенный зеленый */
+    --accent: #C4F0C0;       /* Салатовая кнопка (как на скрине) */
+    --accent-text: #121E18;  /* Темный текст на кнопке */
+    --positive: #6EE7B7;     /* Мята */
+    --negative: #FCA5A5;     /* Мягкий красный */
+    --border-glass: rgba(255, 255, 255, 0.08);
+    
+    --radius: 24px;
+    --blur: blur(16px);
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { font-family: -apple-system, sans-serif; margin: 0; padding: 16px 12px 60px; background: var(--bg); color: var(--text); }
-  h1 { font-size: 22px; margin: 0 0 10px; }
-  h3 { margin: 0 0 12px; font-size: 14px; color: var(--hint); text-transform: uppercase; }
-  .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
-  .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-  .row > * { flex: 1; min-width: 80px; }
-  input, select, button { padding: 12px; border-radius: 10px; border: none; font-size: 15px; background: var(--bg); color: var(--text); width: 100%; outline: none; }
-  button { background: var(--button); color: #fff; font-weight: bold; cursor: pointer; }
-  .muted { color: var(--hint); font-size: 13px; }
-  .positive { color: var(--positive); } .negative { color: var(--negative); }
-  
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
-  .tab { padding: 8px 12px; border-radius: 20px; background: var(--card); font-size: 13px; cursor: pointer; white-space: nowrap; }
-  .tab.active { background: var(--button); color: #fff; }
-  .tab-content { display: none; } .tab-content.active { display: block; }
 
-  .progress-bg { background: var(--border-soft); border-radius: 6px; height: 8px; margin-top: 6px; overflow: hidden; }
-  .progress-fill { height: 100%; border-radius: 6px; background: var(--positive); }
-  .progress-fill.warn { background: #ff9500; }
-  .progress-fill.danger { background: var(--negative); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   
-  .tx { padding: 10px 0; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+  body { 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+    margin: 0; padding: 24px 16px 100px; /* Отступ снизу для меню */
+    background: var(--bg-dark);
+    /* Фон с имитацией бликов (чтобы работал blur) */
+    background-image: 
+      radial-gradient(circle at 10% 10%, rgba(110, 231, 183, 0.15) 0%, transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(196, 240, 192, 0.1) 0%, transparent 40%);
+    color: var(--text-main); 
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  h1 { font-size: 28px; margin: 0 0 24px; font-weight: 400; font-family: "Georgia", serif; color: var(--text-main); text-align: center; letter-spacing: 1px; }
+  h3 { margin: 0 0 16px; font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+
+  /* Стеклянные карточки */
+  .card { 
+    background: var(--bg-card); 
+    backdrop-filter: var(--blur);
+    -webkit-backdrop-filter: var(--blur);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius); 
+    padding: 24px; 
+    margin-bottom: 20px; 
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  /* Поля ввода (Полупрозрачные) */
+  input, select { 
+    padding: 16px; 
+    border-radius: 16px; 
+    border: 1px solid var(--border-glass); 
+    font-size: 15px; 
+    background: rgba(0, 0, 0, 0.2); 
+    color: var(--text-main); 
+    width: 100%; 
+    outline: none;
+    margin-bottom: 12px;
+    transition: border 0.3s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--text-muted); }
+  
+  /* Кнопки */
+  button { 
+    padding: 16px; 
+    border-radius: 16px; 
+    border: none; 
+    font-size: 15px; 
+    font-weight: 600; 
+    background: rgba(255,255,255,0.05); 
+    color: var(--text-main); 
+    width: 100%; 
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-glass);
+  }
+  button:active { transform: scale(0.97); }
+  
+  button.primary { 
+    background: var(--accent); 
+    color: var(--accent-text); 
+    border: none;
+    box-shadow: 0 4px 15px rgba(196, 240, 192, 0.2);
+  }
+  
+  .btn-small {
+    padding: 8px 12px; font-size: 12px; width: auto; border-radius: 10px;
+  }
+
+  .row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .row > * { flex: 1; }
+
+  .muted { color: var(--text-muted); font-size: 13px; }
+  .positive { color: var(--positive); font-weight: 600; }
+  .negative { color: var(--negative); font-weight: 600; }
+  
+  /* Сетка балансов */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .stat { 
+    background: rgba(0,0,0,0.2); padding: 16px; border-radius: 16px; 
+    border: 1px solid var(--border-glass);
+  }
+  .stat.full-width { grid-column: span 2; background: rgba(196, 240, 192, 0.1); border-color: rgba(196, 240, 192, 0.3); }
+  .stat-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+
+  /* История */
+  .tx { 
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 0; border-bottom: 1px solid var(--border-glass);
+  }
+  .tx:last-child { border-bottom: none; }
+
+  /* Прогресс-бар */
+  .progress-bg { 
+    background: rgba(0,0,0,0.3); border-radius: 8px; height: 8px; margin-top: 12px; 
+    overflow: hidden;
+  }
+  .progress-fill { height: 100%; border-radius: 8px; background: var(--accent); transition: width 0.3s; }
+  .progress-fill.warn { background: #FBBF24; }
+  .progress-fill.danger { background: var(--negative); }
+
+  /* --- НИЖНЯЯ НАВИГАЦИЯ (Как на скриншоте) --- */
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: rgba(18, 30, 24, 0.85);
+    backdrop-filter: var(--blur);
+    -webkit-backdrop-filter: var(--blur);
+    border-top: 1px solid var(--border-glass);
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 12px 0 24px; /* Отступ снизу для iPhone */
+    z-index: 1000;
+  }
+  
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 11px; gap: 4px; cursor: pointer;
+    transition: color 0.2s; width: 60px;
+  }
+  
+  .nav-item svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  
+  .nav-item.active { color: var(--accent); }
+  .nav-item.active svg { stroke: var(--accent); }
+  
+  /* Контент */
+  .tab-content { display: none; animation: slideUp 0.3s ease; } 
+  .tab-content.active { display: block; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
 </style>
 </head>
 <body>
 
-<h1>💑 LoveBudget</h1>
-
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('main', event)">Главная</div>
-  <div class="tab" onclick="switchTab('incomes', event)">Доходы</div>
-  <div class="tab" onclick="switchTab('analytics', event)">Аналитика</div>
-  <div class="tab" onclick="switchTab('categories', event)">Категории</div>
-  <div class="tab" onclick="switchTab('plan', event)">План</div>
-  <div class="tab" onclick="switchTab('debts', event)">Долги</div>
-</div>
+<h1>LoveBudget</h1>
 
 <!-- ГЛАВНАЯ -->
 <div id="tab-main" class="tab-content active">
   <div class="card">
     <h3>👛 Бюджеты</h3>
     <div class="grid">
-      <div class="stat" style="grid-column: span 2; background: rgba(0,122,255,0.1);">
+      <div class="stat full-width">
         <div class="muted">Общий котёл</div>
-        <div class="stat-val" id="sharedBalance">0 ₽</div>
+        <div class="stat-val" id="sharedBalance" style="color: var(--accent);">0 ₽</div>
       </div>
       <div class="stat"><div class="muted">Мой личный</div><div class="stat-val" id="walletA">0 ₽</div></div>
       <div class="stat"><div class="muted">Партнёра</div><div class="stat-val" id="walletB">0 ₽</div></div>
     </div>
   </div>
+  
   <div class="card">
     <h3>✏️ Новая трата</h3>
-    <div class="row"><input id="txAmount" type="number" placeholder="Сумма"></div>
-    <div class="row"><input id="txCategoryInput" list="catSuggestions" placeholder="Категория"><datalist id="catSuggestions"></datalist></div>
-    <div class="row"><select id="txSource"><option value="shared">Из общего котла</option><option value="personal">Из личного</option></select></div>
-    <div class="row"><input id="txDescription" placeholder="Описание"><button onclick="addTxNotify()">Добавить</button></div>
+    <input id="txAmount" type="number" placeholder="Сумма">
+    <input id="txCategoryInput" list="catSuggestions" placeholder="Категория">
+    <datalist id="catSuggestions"></datalist>
+    <select id="txSource">
+      <option value="shared">Из общего котла</option>
+      <option value="personal">Из личного</option>
+    </select>
+    <input id="txDescription" placeholder="Описание">
+    <button class="primary" onclick="addTxNotify()">Добавить</button>
   </div>
-  <div class="card"><h3>📜 Последние траты</h3><div id="txList" class="muted">Загрузка...</div></div>
+  
+  <div class="card">
+    <h3>📜 Последние траты</h3>
+    <div id="txList" class="muted">Загрузка...</div>
+  </div>
 </div>
 
 <!-- ДОХОДЫ -->
 <div id="tab-incomes" class="tab-content">
   <div class="card">
     <h3>💰 Ручное пополнение</h3>
-    <div class="row"><input id="manualAmount" type="number" placeholder="Сумма"></div>
-    <div class="row"><select id="manualSource"><option value="shared">В общий котёл</option><option value="personal">В личный</option></select></div>
-    <div class="row"><input id="manualDesc" placeholder="Откуда"><button onclick="addManualIncome()">Пополнить</button></div>
+    <input id="manualAmount" type="number" placeholder="Сумма">
+    <select id="manualSource">
+      <option value="shared">В общий котёл</option>
+      <option value="personal">В личный</option>
+    </select>
+    <input id="manualDesc" placeholder="Откуда">
+    <button class="primary" onclick="addManualIncome()">Пополнить</button>
   </div>
   <div class="card">
     <h3>📅 Расписание ЗП</h3>
-    <div class="row"><input id="incName" placeholder="Название"><input id="incAmount" type="number" placeholder="Сумма"><input id="incDay" type="number" placeholder="День"><button onclick="addScheduleIncome()">+</button></div>
+    <div class="row">
+      <input id="incName" placeholder="Название">
+      <input id="incAmount" type="number" placeholder="Сумма">
+    </div>
+    <div class="row">
+      <input id="incDay" type="number" placeholder="День">
+      <button onclick="addScheduleIncome()">+</button>
+    </div>
     <div id="incomesList" class="muted">Нет записей</div>
   </div>
 </div>
 
 <!-- АНАЛИТИКА -->
 <div id="tab-analytics" class="tab-content">
-  <div class="card"><h3>📈 Куда уходят деньги</h3><div id="analyticsList">Загрузка...</div></div>
+  <div class="card">
+    <h3>📈 Куда уходят деньги</h3>
+    <div id="analyticsList">Загрузка...</div>
+  </div>
 </div>
 
 <!-- КАТЕГОРИИ -->
 <div id="tab-categories" class="tab-content">
-  <div class="card"><h3>🎚️ Новая категория</h3><div class="row"><input id="catName" placeholder="Название"><input id="catLimit" type="number" placeholder="Лимит"><button onclick="addCategory()">Создать</button></div></div>
-  <div class="card"><h3>📊 Лимиты</h3><div id="categoriesList" class="muted">Загрузка...</div></div>
+  <div class="card">
+    <h3>🎚️ Новая категория</h3>
+    <input id="catName" placeholder="Название">
+    <input id="catLimit" type="number" placeholder="Лимит">
+    <button class="primary" onclick="addCategory()">Создать</button>
+  </div>
+  <div class="card">
+    <h3>📊 Лимиты</h3>
+    <div id="categoriesList" class="muted">Загрузка...</div>
+  </div>
 </div>
 
 <!-- ПЛАН -->
 <div id="tab-plan" class="tab-content">
   <div class="card">
     <h3>📌 Постоянные списания</h3>
-    <div class="row"><input id="fixName" placeholder="Название"><input id="fixAmount" type="number" placeholder="Сумма"><input id="fixDay" type="number" placeholder="День"><button onclick="addFixedExpense()">+</button></div>
-    <div id="fixedList" class="muted">Нет записей</div>
-    <div id="fixedTotal" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-soft); font-size:16px; font-weight:bold; text-align:right;">
+    <div class="row">
+      <input id="fixName" placeholder="Название">
+      <input id="fixAmount" type="number" placeholder="Сумма">
+    </div>
+    <div class="row">
+      <input id="fixDay" type="number" placeholder="День">
+      <button onclick="addFixedExpense()">+</button>
+    </div>
+    <div id="fixedList" class="muted" style="margin-top: 16px;">Нет записей</div>
+    <div id="fixedTotal" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border-glass); font-size:16px; font-weight:bold; text-align:right;">
       Итого: 0 ₽
     </div>
   </div>
@@ -115,17 +266,47 @@
 <div id="tab-debts" class="tab-content">
   <div class="card">
     <h3>💰 Добавить долг</h3>
-    <div class="row">
-      <select id="debtType">
-        <option value="plus">+ Нам должны</option>
-        <option value="minus">- Мы должны</option>
-      </select>
-    </div>
-    <div class="row"><input id="debtName" placeholder="Кому/Кто (Партнёр, Банк)"></div>
-    <div class="row"><input id="debtAmount" type="number" placeholder="Сумма"></div>
-    <div class="row"><input id="debtDesc" placeholder="За что"><button onclick="addDebt()">Добавить</button></div>
+    <select id="debtType">
+      <option value="plus">+ Нам должны</option>
+      <option value="minus">- Мы должны</option>
+    </select>
+    <input id="debtName" placeholder="Кому/Кто (Партнёр, Банк)">
+    <input id="debtAmount" type="number" placeholder="Сумма">
+    <input id="debtDesc" placeholder="За что">
+    <button class="primary" onclick="addDebt()">Добавить</button>
   </div>
-  <div class="card"><h3>📋 Активные долги</h3><div id="debtsList" class="muted">Загрузка...</div></div>
+  <div class="card">
+    <h3>📋 Активные долги</h3>
+    <div id="debtsList" class="muted">Загрузка...</div>
+  </div>
+</div>
+
+<!-- НИЖНЯЯ НАВИГАЦИЯ -->
+<div class="bottom-nav">
+  <div class="nav-item active" onclick="switchTab('main', this)">
+    <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+    <span>Главная</span>
+  </div>
+  <div class="nav-item" onclick="switchTab('categories', this)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+    <span>Категории</span>
+  </div>
+  <div class="nav-item" onclick="switchTab('analytics', this)">
+    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+    <span>Аналитика</span>
+  </div>
+  <div class="nav-item" onclick="switchTab('plan', this)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+    <span>План</span>
+  </div>
+  <div class="nav-item" onclick="switchTab('incomes', this)">
+    <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    <span>Доходы</span>
+  </div>
+  <div class="nav-item" onclick="switchTab('debts', this)">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+    <span>Долги</span>
+  </div>
 </div>
 
 <script>
@@ -133,12 +314,16 @@ const BACKEND_URL = "https://lovebudget-u4ez.onrender.com";
 let tg = window.Telegram?.WebApp;
 let userId = tg?.initDataUnsafe?.user?.id || 12345;
 let partnerId = null;
+let currentDebts = [];
 
-function switchTab(tabId, event) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+function switchTab(tabId, element) {
+  document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById('tab-' + tabId).classList.add('active');
+  
+  if (element) element.classList.add('active');
+  
+  const targetContent = document.getElementById('tab-' + tabId);
+  if (targetContent) targetContent.classList.add('active');
 }
 
 function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
@@ -175,21 +360,20 @@ async function loadData() {
       let spent = catAnalytics[cat.name] || 0;
       let percent = cat.limit_amount > 0 ? (spent / cat.limit_amount) * 100 : 0;
       let fill = percent >= 100 ? 'danger' : (percent >= 80 ? 'warn' : '');
-      return `<div style="margin-bottom: 12px;"><div style="display:flex; justify-content:space-between; font-size:14px;"><b>${cat.name}</b><span class="muted">${fmt(spent)} / ${cat.limit_amount > 0 ? fmt(cat.limit_amount) : '∞'}</span></div>${cat.limit_amount > 0 ? `<div class="progress-bg"><div class="progress-fill ${fill}" style="width:${Math.min(100, percent)}%"></div></div>` : ''}</div>`;
+      return `<div style="margin-bottom: 16px;"><div style="display:flex; justify-content:space-between; font-size:14px;"><b>${cat.name}</b><span class="muted">${fmt(spent)} / ${cat.limit_amount > 0 ? fmt(cat.limit_amount) : '∞'}</span></div>${cat.limit_amount > 0 ? `<div class="progress-bg"><div class="progress-fill ${fill}" style="width:${Math.min(100, percent)}%"></div></div>` : ''}</div>`;
     }).join('') || 'Нет категорий';
 
-    let resAnal = await fetch(`${BACKEND_URL}/api/category_analytics?user_id=${userId}`);
-    let analytics = await resAnal.json();
-    let sortedCats = Object.entries(analytics).sort((a,b) => b[1] - a[1]);
+    let sortedCats = Object.entries(catAnalytics).sort((a,b) => b[1] - a[1]);
     let maxCat = sortedCats.length ? sortedCats[0][1] : 1;
     document.getElementById('analyticsList').innerHTML = sortedCats.length ? sortedCats.map(c => `
-      <div style="margin-bottom: 12px;"><div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;"><span>${c[0]}</span><b>${fmt(c[1])}</b></div><div style="background:var(--bg); border-radius:4px; height:8px;"><div style="background:var(--button); width:${(c[1]/maxCat)*100}%; height:100%; border-radius:4px;"></div></div></div>
+      <div style="margin-bottom: 16px;"><div style="display:flex; justify-content:space-between; font-size:14px; margin-bottom:6px;"><span>${c[0]}</span><b>${fmt(c[1])}</b></div><div class="progress-bg" style="height: 8px;"><div class="progress-fill" style="width:${(c[1]/maxCat)*100}%;"></div></div></div>
     `).join('') : 'Нет трат';
 
     loadPlan();
     loadDebts();
     loadScheduleIncomes();
-  } catch (e) { console.error(e); }
+
+  } catch (e) { console.error("Ошибка загрузки:", e); }
 }
 
 // --- ПЛАН ---
@@ -213,7 +397,7 @@ async function loadPlan() {
   document.getElementById('fixedTotal').textContent = 'Итого: ' + fmt(data.total);
 }
 
-// --- ДОЛГИ (ИСПРАВЛЕНО) ---
+// --- ДОЛГИ ---
 async function addDebt() {
   let type = document.getElementById('debtType').value; 
   let name = document.getElementById('debtName').value.trim() || 'Партнёр';
@@ -232,62 +416,53 @@ async function addDebt() {
 
 async function loadDebts() {
   let res = await fetch(`${BACKEND_URL}/api/get_debts?user_id=${userId}`);
-  let debts = await res.json();
+  currentDebts = await res.json();
   
-  document.getElementById('debtsList').innerHTML = debts.length ? debts.map(d => {
-    // Логика цвета: если lender_id совпадает с нами или это третье лицо с is_plus (не передается, но мы знаем логику)
-    // Но так как в БД мы не храним is_plus явно, вычислим: 
-    // Нам должны = долг на нас (borrower_id === userId) или это третье лицо, которому должны мы (lender_id === null)
-    let isPlus = (d.borrower_id === userId) || (d.lender_id === null && d.name !== 'Партнёр');
-    // Но для третьего лица мы не знаем, кто дал. Если имя третьего лица и мы добавили с is_plus, то мы дали.
-    // Поэтому в базе: lender_id === userId (мы дали), borrower_id === userId (мы взяли).
-    
-    let weLent = (d.lender_id === userId) || (d.lender_id === null && d.name !== 'Партнёр'); // Условно
-    // Более точная логика: если это третье лицо, и мы создали его как "Нам должны", значит в базе lender_id === null, borrower_id === null, но нам надо как-то отличить.
-    // Поэтому я добавил в модель имя и будем считать: если долг на партнёра (name == 'Партнёр'), то смотрим ID. Если третье лицо — смотрим по знаку (но мы его не сохранили отдельно).
-    // Ок, давайте вычислим по ID.
-    
-    let color = 'negative'; // По умолчанию мы должны
+  document.getElementById('debtsList').innerHTML = currentDebts.length ? currentDebts.map(d => {
+    let color = 'negative'; 
     let label = 'Мы должны';
     
     if (d.name === 'Партнёр') {
         if (d.lender_id === userId) { color = 'positive'; label = 'Нам должны'; }
     } else {
-        // Третье лицо. Если мы добавили как "+" (нам должны), значит в базе borrower_id === null (и lender_id === null, но там имя).
-        // Если "мы должны", то borrower_id === userId. 
-        if (d.borrower_id !== userId) { color = 'positive'; label = 'Нам должны'; }
+        if (d.lender_id === userId) { color = 'positive'; label = 'Нам должны'; }
+        else if (d.borrower_id === userId) { color = 'negative'; label = 'Мы должны'; }
     }
 
     return `
-      <div class="tx" style="align-items: flex-start;">
+      <div class="tx" style="align-items: flex-start; padding-bottom: 16px;">
         <div>
           <b>${d.name}</b> <br>
           <span class="muted" style="font-size:12px;">${d.description}</span>
         </div>
         <div style="text-align:right;">
-          <div class="${color}" style="font-weight:bold;">${label}: ${fmt(d.amount)}</div>
-          <button class="small secondary" style="margin-top:6px; font-size:11px; padding:4px 8px;" onclick="editDebt(${d.id}, ${d.amount}, '${d.description}')">Изменить</button>
+          <div class="${color}" style="font-weight:bold; margin-bottom: 8px;">${label}: ${fmt(d.amount)}</div>
+          <div style="display:flex; gap: 8px; justify-content: flex-end;">
+            <button class="btn-small" onclick="editDebt(${d.id})">Сумма</button>
+            <button class="btn-small primary" onclick="closeDebt(${d.id})">Закрыть</button>
+          </div>
         </div>
       </div>
     `;
   }).join('') : 'Нет активных долгов';
 }
 
-async function editDebt(id, currentAmount, currentDesc) {
-  let newAmount = prompt(`Изменить сумму долга "${currentDesc}"?`, currentAmount);
+async function editDebt(id) {
+  const debt = currentDebts.find(x => x.id === id);
+  if (!debt) return;
+  let newAmount = prompt(`Изменить сумму долга "${debt.description}"?`, debt.amount);
   if (newAmount === null) return;
   newAmount = +newAmount;
-  if (newAmount < 0) return alert('Сумма не может быть отрицательной');
-  
-  let isPaid = false;
-  if (newAmount === 0) {
-    isPaid = confirm('Сумма 0. Закрыть долг полностью?');
-    if (!isPaid) return; // Если не закрываем, ничего не меняем
-  } else {
-    isPaid = confirm('Долг полностью выплачен? Нажмите "ОК" чтобы закрыть его, или "Отмена" чтобы просто изменить сумму.');
-  }
-  
-  await fetch(`${BACKEND_URL}/api/update_debt?debt_id=${id}&amount=${newAmount}&is_paid=${isPaid}`, {method: 'POST'});
+  if (newAmount <= 0) return alert('Для закрытия используйте кнопку "Закрыть"');
+  await fetch(`${BACKEND_URL}/api/update_debt?debt_id=${id}&amount=${newAmount}&is_paid=false`, {method: 'POST'});
+  loadData();
+}
+
+async function closeDebt(id) {
+  const debt = currentDebts.find(x => x.id === id);
+  if (!debt) return;
+  if (!confirm(`Полностью закрыть долг на ${fmt(debt.amount)}?`)) return;
+  await fetch(`${BACKEND_URL}/api/update_debt?debt_id=${id}&amount=0&is_paid=true`, {method: 'POST'});
   loadData();
 }
 
