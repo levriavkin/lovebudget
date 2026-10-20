@@ -66,8 +66,10 @@ class FixedExpense(SQLModel, table=True):
 class Debt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     pair_id: int
-    lender_id: int # Кто дал
-    borrower_id: int # Кто взял
+    # Если это долг партнёру, тут будут ID. Если третьему лицу — None.
+    lender_id: Optional[int] = None 
+    borrower_id: Optional[int] = None 
+    name: str = "Партнёр" # Имя контрагента (для третьих лиц)
     amount: float
     description: str
     is_paid: bool = False
@@ -245,15 +247,38 @@ def get_schedule_income(user_id: int, session: Session = Depends(lambda: Session
 
 # --- ДОЛГИ ---
 @app.post("/api/add_debt")
-def add_debt(lender_id: int, borrower_id: int, amount: float, description: str, session: Session = Depends(lambda: Session(engine))):
-    pair_id = get_pair_id(lender_id, session)
-    session.add(Debt(pair_id=pair_id, lender_id=lender_id, borrower_id=borrower_id, amount=amount, description=description, created_at=time.time()))
-    session.commit(); return {"status": "success"}
+def add_debt(user_id: int, amount: float, description: str, name: str = "Партнёр", is_plus: bool = True, session: Session = Depends(lambda: Session(engine))):
+    pair_id = get_pair_id(user_id, session)
+    user = session.get(User, user_id)
+    
+    # Определяем, кто дал, а кто взял
+    lender = user_id if is_plus else (user.partner_id if user and user.partner_id else 0)
+    borrower = (user.partner_id if user and user.partner_id else 0) if is_plus else user_id
+    
+    # Если имя не "Партнёр", значит это третье лицо
+    if name != "Партнёр":
+        lender = user_id if is_plus else None
+        borrower = None if is_plus else user_id
+    
+    debt = Debt(pair_id=pair_id, lender_id=lender, borrower_id=borrower, name=name, amount=amount, description=description, created_at=time.time())
+    session.add(debt); session.commit()
+    return {"status": "success"}
 
 @app.get("/api/get_debts")
 def get_debts(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
+    # Возвращаем только неоплаченные
     return session.exec(select(Debt).where(Debt.pair_id == pair_id, Debt.is_paid == False)).all()
+
+@app.post("/api/update_debt")
+def update_debt(debt_id: int, amount: float, is_paid: bool, session: Session = Depends(lambda: Session(engine))):
+    debt = session.get(Debt, debt_id)
+    if debt:
+        debt.amount = amount
+        debt.is_paid = is_paid
+        session.add(debt); session.commit()
+        return {"status": "success"}
+    raise HTTPException(status_code=404, detail="Долг не найден")
 # --- РУЧНОЕ ПОПОЛНЕНИЕ БАЛАНСА ---
 @app.post("/api/add_manual_income")
 async def add_manual_income(user_id: int, amount: float, source: str, description: str = "Пополнение", session: Session = Depends(lambda: Session(engine))):
