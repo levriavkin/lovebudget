@@ -7,535 +7,310 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg: var(--tg-theme-bg-color, #f2f2f7);
-    --card: var(--tg-theme-secondary-bg-color, #ffffff);
-    --text: var(--tg-theme-text-color, #000000);
-    --hint: var(--tg-theme-hint-color, #8e8e93);
-    --button: var(--tg-theme-button-color, #007aff);
-    --button-text: var(--tg-theme-button-text-color, #ffffff);
-    --positive: #34c759;
-    --negative: #ff3b30;
-    --warn: #ff9500;
+    --bg: var(--tg-theme-bg-color, #f2f2f7); --card: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #000); --hint: var(--tg-theme-hint-color, #8e8e93);
+    --button: var(--tg-theme-button-color, #007aff); --positive: #34c759; --negative: #ff3b30;
     --border-soft: rgba(150,150,150,0.2);
   }
-
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 16px 12px 60px; background: var(--bg); color: var(--text); line-height: 1.4; }
-  h1 { font-size: 24px; margin: 0 0 4px; font-weight: bold; }
-  h3 { margin: 0 0 12px; font-size: 16px; color: var(--text); font-weight: 600; }
-  
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 16px 12px 60px; background: var(--bg); color: var(--text); }
+  h1 { font-size: 22px; margin: 0 0 10px; }
+  h3 { margin: 0 0 12px; font-size: 14px; color: var(--hint); text-transform: uppercase; }
   .card { background: var(--card); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
-  .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
-  .row > * { flex: 1; min-width: 100px; }
-  
+  .row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .row > * { flex: 1; min-width: 80px; }
   input, select, button { padding: 12px; border-radius: 10px; border: none; font-size: 15px; background: var(--bg); color: var(--text); width: 100%; outline: none; }
-  input::placeholder { color: var(--hint); }
-  button { background: var(--button); color: var(--button-text); font-weight: 600; cursor: pointer; }
-  button.secondary { background: var(--bg); color: var(--text); font-weight: normal; }
-  button.small { padding: 6px 10px; font-size: 12px; width: auto; }
-  
+  button { background: var(--button); color: #fff; font-weight: bold; cursor: pointer; }
+  button.sec { background: var(--bg); color: var(--text); }
   .muted { color: var(--hint); font-size: 13px; }
-  .positive { color: var(--positive); }
-  .negative { color: var(--negative); }
+  .positive { color: var(--positive); } .negative { color: var(--negative); }
+  
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+  .tab { padding: 8px 12px; border-radius: 20px; background: var(--card); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .tab.active { background: var(--button); color: #fff; }
+  .tab-content { display: none; } .tab-content.active { display: block; }
 
-  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .stat { background: var(--bg); padding: 12px; border-radius: 10px; }
-  .stat-label { font-size: 12px; color: var(--hint); margin-bottom: 4px; }
-  .stat-val { font-size: 18px; font-weight: bold; }
-
-  .tx { padding: 10px 0; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
-  .tx:last-child { border-bottom: none; }
-  .tx-actions { display: flex; gap: 6px; }
-
-  .advice-item { display: flex; gap: 10px; padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 8px; font-size: 14px; border-left: 3px solid var(--button); }
-  .advice-item.warn { border-left-color: var(--warn); }
-  .advice-item.danger { border-left-color: var(--negative); }
-  .advice-item.ok { border-left-color: var(--positive); }
-
-  .chart-container { background: var(--bg); border-radius: 10px; padding: 12px 4px 4px; margin-top: 12px; }
-  .chart-svg { width: 100%; height: 180px; display: block; }
-
-  .limit-item { padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 10px; border-left: 3px solid var(--button); }
-  .limit-item.warn { border-left-color: var(--warn); }
-  .limit-item.danger { border-left-color: var(--negative); }
-  .limit-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; }
-  .limit-bar { background: var(--border-soft); border-radius: 6px; height: 8px; overflow: hidden; }
-  .limit-bar > div { height: 100%; }
-  .limit-bar > div.ok { background: var(--positive); }
-  .limit-bar > div.warn { background: var(--warn); }
-  .limit-bar > div.danger { background: var(--negative); }
-
-  .goal { margin-bottom: 14px; background: var(--bg); padding: 12px; border-radius: 10px; }
-  .goal-head { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
-  .bar { background: var(--border-soft); border-radius: 6px; height: 10px; overflow: hidden; }
-  .bar > div { height: 100%; background: var(--button); transition: width .3s; }
-
-  .wish-item { padding: 12px; border-radius: 10px; background: var(--bg); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .wish-item.priority-high { border-left: 3px solid var(--negative); }
-  .wish-item.priority-medium { border-left: 3px solid var(--warn); }
-  .wish-item.priority-low { border-left: 3px solid var(--hint); }
-  .wish-body { flex: 1; }
-  .wish-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .progress-bg { background: var(--border-soft); border-radius: 6px; height: 8px; margin-top: 6px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 6px; background: var(--positive); }
+  .progress-fill.warn { background: #ff9500; }
+  .progress-fill.danger { background: var(--negative); }
 </style>
 </head>
 <body>
 
 <h1>💑 LoveBudget</h1>
-<div class="muted" style="margin-bottom: 16px;" id="partnerStatus">Загрузка данных...</div>
 
-<!-- НАСТРОЙКИ -->
-<div class="card">
-  <h3>⚙️ Настройки пары</h3>
-  <div class="row">
-    <input id="nameA" placeholder="Ваше имя">
-    <input id="incomeA" type="number" placeholder="Ваш доход, ₽">
-  </div>
-  <div class="row">
-    <input id="nameB" placeholder="Имя партнёра" readonly style="opacity: 0.6;">
-    <input id="incomeB" type="number" placeholder="Доход партнёра, ₽" readonly style="opacity: 0.6;">
-  </div>
-  <button onclick="saveSetup()">Сохранить мой доход</button>
-  <div id="splitInfo" class="muted" style="margin-top: 12px;"></div>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('main', event)">Главная</div>
+  <div class="tab" onclick="switchTab('categories', event)">Категории</div>
+  <div class="tab" onclick="switchTab('analytics', event)">Аналитика</div>
+  <div class="tab" onclick="switchTab('plan', event)">План</div>
+  <div class="tab" onclick="switchTab('debts', event)">Долги</div>
 </div>
 
-<!-- БАЛАНСЫ -->
-<div class="card">
-  <h3>🏦 Балансы</h3>
-  <div class="grid">
-    <div class="stat" style="grid-column: span 2; background: rgba(0,122,255,0.1);">
-      <div class="stat-label">Общий бюджет (Сумма доходов)</div>
-      <div class="stat-val" id="sharedBalance" style="color: var(--button); font-size: 22px;">0 ₽</div>
+<!-- ГЛАВНАЯ ВКЛАДКА -->
+<div id="tab-main" class="tab-content active">
+  <div class="card">
+    <h3>✏️ Новая трата</h3>
+    <div class="row">
+      <input id="txAmount" type="number" placeholder="Сумма">
     </div>
-    <div class="stat">
-      <div class="stat-label" id="walletAName">Ваш кошелёк</div>
-      <div class="stat-val" id="walletA">0 ₽</div>
+    
+    <!-- ПОЛЕ С ПОДСКАЗКАМИ -->
+    <div class="row">
+      <input id="txCategoryInput" list="catSuggestions" placeholder="Категория (выбери или введи свою)">
+      <datalist id="catSuggestions">
+        <!-- Сюда JS будет подгружать существующие категории -->
+      </datalist>
     </div>
-    <div class="stat">
-      <div class="stat-label" id="walletBName">Кошелёк партнёра</div>
-      <div class="stat-val" id="walletB">0 ₽</div>
+
+    <div class="row">
+      <input id="txDescription" placeholder="Описание (необязательно)">
+    </div>
+    <div class="row">
+      <select id="txSource"><option value="shared">Из общего бюджета</option><option value="personalA">Из личного (Вы)</option><option value="personalB">Из личного (Партнёр)</option></select>
+      <button onclick="addTxNotify()">Добавить</button>
     </div>
   </div>
-</div>
 
-<!-- ТРАНЗАКЦИЯ -->
-<div class="card">
-  <h3>➕ Добавить трату</h3>
-  <div class="row">
-    <input id="txAmount" type="number" placeholder="Сумма, ₽">
-    <input id="txCategory" placeholder="Категория">
-  </div>
-  <div class="row">
-    <select id="txSource">
-      <option value="shared">Из общего бюджета</option>
-      <option value="personalA">Из личного (Вы)</option>
-      <option value="personalB">Из личного (Партнёр)</option>
-    </select>
-    <button onclick="addTx()">Добавить</button>
+  <div class="card">
+    <h3>📜 Последние траты</h3>
+    <div id="txList" class="muted">Загрузка...</div>
   </div>
 </div>
 
-<!-- ЦЕЛИ -->
-<div class="card">
-  <h3>🎯 Общие цели</h3>
-  <div class="row">
-    <input id="goalName" placeholder="Название (Отпуск)">
-    <input id="goalTarget" type="number" placeholder="Цель, ₽">
-    <input id="goalMonths" type="number" placeholder="Месяцев">
-    <button onclick="addGoal()" style="flex: 0 0 auto;">+</button>
+<!-- ВКЛАДКА КАТЕГОРИЙ -->
+<div id="tab-categories" class="tab-content">
+  <div class="card">
+    <h3>🎚️ Создать категорию и лимит</h3>
+    <div class="row">
+      <input id="catName" placeholder="Название (Кафе)">
+      <input id="catLimit" type="number" placeholder="Лимит ₽ (0 = без лимита)">
+      <button onclick="addCategory()">Создать</button>
+    </div>
   </div>
-  <div id="goals" class="muted">Нет целей</div>
-</div>
 
-<!-- ЛИМИТЫ -->
-<div class="card">
-  <h3>🎚️ Лимиты по категориям</h3>
-  <div class="row">
-    <input id="limitName" placeholder="Категория" value="Кафе">
-    <input id="limitAmount" type="number" placeholder="Лимит, ₽" value="10000">
-    <button onclick="addLimit()" style="flex: 0 0 auto;">+</button>
+  <div class="card">
+    <h3>📊 Ваши лимиты на этот месяц</h3>
+    <div id="categoriesList" class="muted">Загрузка...</div>
   </div>
-  <div id="limitsList" class="muted">Лимиты не заданы</div>
 </div>
 
-<!-- ГРАФИК -->
-<div class="card">
-  <h3>📈 Динамика расходов</h3>
-  <div id="chartBlock" class="muted">Нет данных</div>
-</div>
-
-<!-- WISHLIST -->
-<div class="card">
-  <h3>🛍️ Несрочные покупки</h3>
-  <div class="row">
-    <input id="wishName" placeholder="Что хотим (Телефон)">
-    <input id="wishPrice" type="number" placeholder="Цена, ₽">
-    <select id="wishPriority">
-      <option value="high">🔴 Высокий</option>
-      <option value="medium" selected>🟡 Средний</option>
-      <option value="low">⚪ Низкий</option>
-    </select>
-    <button onclick="addWish()" style="flex: 0 0 auto;">+</button>
+<!-- ВКЛАДКА АНАЛИТИКИ -->
+<div id="tab-analytics" class="tab-content">
+  <div class="card">
+    <h3>📈 Куда уходят деньги (Общий бюджет)</h3>
+    <div id="analyticsList">Загрузка...</div>
   </div>
-  <div id="wishlist" class="muted">Пусто</div>
 </div>
 
-<!-- ПОМОЩНИК -->
-<div class="card">
-  <h3>💡 Помощник</h3>
-  <div id="adviceBlock"></div>
+<!-- ВКЛАДКА ПЛАНА -->
+<div id="tab-plan" class="tab-content">
+  <div class="card">
+    <h3>💵 Расписание ЗП</h3>
+    <div class="row">
+      <input id="incName" placeholder="Название">
+      <input id="incAmount" type="number" placeholder="Сумма">
+      <input id="incDay" type="number" placeholder="День">
+      <button onclick="addScheduleIncome()">+</button>
+    </div>
+    <div id="incomesList" class="muted">Нет записей</div>
+  </div>
+
+  <div class="card">
+    <h3>📌 Постоянные списания (Прогноз)</h3>
+    <div class="row">
+      <input id="fixName" placeholder="Название">
+      <input id="fixAmount" type="number" placeholder="Сумма">
+      <input id="fixDay" type="number" placeholder="День">
+      <button onclick="addFixedExpense()">+</button>
+    </div>
+    <div id="fixedList" class="muted">Нет записей</div>
+  </div>
 </div>
 
-<!-- ИСТОРИЯ -->
-<div class="card">
-  <h3>📜 История трат</h3>
-  <div id="txList" class="muted">Пока нет трат</div>
+<!-- ВКЛАДКА ДОЛГОВ -->
+<div id="tab-debts" class="tab-content">
+  <div class="card">
+    <h3>💰 Добавить долг</h3>
+    <div class="row">
+      <input id="debtAmount" type="number" placeholder="Сумма">
+      <input id="debtDesc" placeholder="За что">
+    </div>
+    <div class="row">
+      <select id="debtBorrower">
+        <option value="me">Я должен партнёру</option>
+        <option value="partner">Партнёр должен мне</option>
+      </select>
+      <button onclick="addDebt()">Добавить</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>📋 Активные долги</h3>
+    <div id="debtsList" class="muted">Загрузка...</div>
+  </div>
 </div>
 
 <script>
-const BACKEND_URL = "https://lovebudget-u4ez.onrender.com"; 
+const BACKEND_URL = "https://lovebudget-u4ez.onrender.com";
+let tg = window.Telegram?.WebApp;
+let userId = tg?.initDataUnsafe?.user?.id || 12345;
+let partnerId = null;
+let globalCategories = [];
 
-let tgUser = null;
-try {
-  if (window.Telegram && window.Telegram.WebApp) {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
-    tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
-  }
-} catch(e) {}
-
-const userId = tgUser ? tgUser.id : 12345; 
-
-let state = {
-  partnerA: { name: '', income: 0 },
-  partnerB: { name: '', income: 0 },
-  transactions: [],
-  limits: [], 
-  goals: [],
-  wishes: []
-};
+function switchTab(tabId, event) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+}
 
 function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
-// --- ЗАГРУЗКА ---
 async function loadData() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/sync?user_id=${userId}`);
-    const data = await res.json();
+    // 1. Загружаем категории
+    let resCats = await fetch(`${BACKEND_URL}/api/get_categories?user_id=${userId}`);
+    globalCategories = await resCats.json();
     
-    if (data.user) {
-      state.partnerA.name = data.user.name || tgUser?.first_name || 'Вы';
-      state.partnerA.income = data.user.income || 0;
-    }
-    if (data.partner) {
-      state.partnerB.name = data.partner.name || 'Партнёр';
-      state.partnerB.income = data.partner.income || 0;
-    }
+    // Обновляем подсказки (datalist) в быстрых тратах
+    let datalist = document.getElementById('catSuggestions');
+    datalist.innerHTML = globalCategories.map(c => `<option value="${c.name}">`).join('');
+
+    // 2. Загружаем аналитику
+    let resAnal = await fetch(`${BACKEND_URL}/api/category_analytics?user_id=${userId}`);
+    let analytics = await resAnal.json();
     
-    state.transactions = data.transactions || [];
-    loadLocalItems();
+    // Рендерим список категорий с лимитами
+    let catHtml = "";
+    globalCategories.forEach(cat => {
+      let spent = analytics[cat.name] || 0;
+      let percent = cat.limit_amount > 0 ? (spent / cat.limit_amount) * 100 : 0;
+      let fillClass = percent >= 100 ? 'danger' : (percent >= 80 ? 'warn' : '');
+      
+      catHtml += `
+        <div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border-soft);">
+          <div style="display:flex; justify-content:space-between; font-size:14px;">
+            <b>${cat.name}</b>
+            <span class="muted">${fmt(spent)} ${cat.limit_amount > 0 ? '/ ' + fmt(cat.limit_amount) : ''}</span>
+          </div>
+          ${cat.limit_amount > 0 ? `<div class="progress-bg"><div class="progress-fill ${fillClass}" style="width:${Math.min(100, percent)}%"></div></div>` : ''}
+        </div>
+      `;
+    });
+    document.getElementById('categoriesList').innerHTML = catHtml || 'Нет категорий';
 
-    document.getElementById('partnerStatus').textContent = data.partner 
-      ? `Связаны с: ${data.partner.name}` 
-      : 'Партнёр ещё не привязан (нажмите "Пригласить" в боте)';
+    // Рендерим Аналитику
+    let sortedAnal = Object.entries(analytics).sort((a,b) => b[1] - a[1]);
+    document.getElementById('analyticsList').innerHTML = sortedAnal.length ? sortedAnal.map(a => `
+      <div class="tx"><div>${a[0]}</div><div class="negative">${fmt(a[1])}</div></div>
+    `).join('') : 'Нет трат';
 
-    render();
-  } catch (e) {
-    console.error("Ошибка сети:", e);
-    document.getElementById('partnerStatus').textContent = 'Сервер спит. Подождите 30 сек и обновите страницу.';
-  }
+    // 3. Загружаем общую синхронизацию (баланс, история)
+    const resSync = await fetch(`${BACKEND_URL}/api/sync?user_id=${userId}`);
+    const data = await resSync.json();
+    partnerId = data.partner ? data.partner.id : null;
+    
+    let totalIncome = (data.user.income || 0) + (data.partner?.income || 0);
+    let sharedSpent = 0;
+    data.transactions.forEach(tx => { if (tx.source === 'shared') sharedSpent += tx.amount; });
+
+    document.getElementById('txList').innerHTML = data.transactions.length ? data.transactions.map(tx => `
+      <div class="tx">
+        <div>
+          <b>${tx.category}</b> ${tx.description ? `<span class="muted">(${tx.description})</span>` : ''}
+        </div>
+        <div class="negative">−${fmt(tx.amount)}</div>
+      </div>
+    `).join('') : '<div class="muted">Нет трат</div>';
+
+    loadScheduleAndFixed();
+    loadDebts();
+
+  } catch (e) { console.error("Ошибка загрузки:", e); }
 }
 
-async function saveSetup() {
-  let name = document.getElementById('nameA').value || 'Пользователь';
-  let income = +document.getElementById('incomeA').value || 0;
-  
-  try {
-    await fetch(`${BACKEND_URL}/api/setup?user_id=${userId}&name=${encodeURIComponent(name)}&income=${income}`, { method: 'POST' });
-    await loadData();
-  } catch (e) {
-    alert('Не удалось сохранить. Проверьте интернет.');
-  }
+async function addCategory() {
+  let name = document.getElementById('catName').value.trim();
+  let limit = +document.getElementById('catLimit').value || 0;
+  if (!name) return alert('Введите название');
+  await fetch(`${BACKEND_URL}/api/add_category?user_id=${userId}&name=${encodeURIComponent(name)}&limit_amount=${limit}`, {method: 'POST'});
+  document.getElementById('catName').value = '';
+  document.getElementById('catLimit').value = '';
+  loadData();
 }
 
-async function addTx() {
+async function addTxNotify() {
   let amount = +document.getElementById('txAmount').value;
-  let category = document.getElementById('txCategory').value.trim() || 'Без категории';
+  // Берем значение из текстового поля
+  let cat = document.getElementById('txCategoryInput').value.trim(); 
+  let desc = document.getElementById('txDescription').value.trim();
   let source = document.getElementById('txSource').value;
-
-  if (!amount || amount <= 0) return alert('Введите сумму больше 0');
-
-  try {
-    await fetch(`${BACKEND_URL}/api/add_tx?user_id=${userId}&amount=${amount}&category=${encodeURIComponent(category)}&source=${source}`, { method: 'POST' });
-    document.getElementById('txAmount').value = '';
-    document.getElementById('txCategory').value = '';
-    await loadData();
-  } catch (e) {
-    alert('Ошибка добавления. Проверьте интернет.');
-  }
-}
-
-// --- ЛОКАЛЬНЫЕ ФУНКЦИИ ---
-function saveLocalItems() {
-  try { localStorage.setItem('lovebudget_local', JSON.stringify({ limits: state.limits, goals: state.goals, wishes: state.wishes })); } catch(e) {}
-}
-function loadLocalItems() {
-  try {
-    let saved = localStorage.getItem('lovebudget_local');
-    if (saved) {
-      let parsed = JSON.parse(saved);
-      state.limits = parsed.limits || [];
-      state.goals = parsed.goals || [];
-      state.wishes = parsed.wishes || [];
-    }
-  } catch(e) {}
-}
-
-// --- ЦЕЛИ ---
-function addGoal() {
-  let name = document.getElementById('goalName').value.trim();
-  let target = +document.getElementById('goalTarget').value;
-  let months = +document.getElementById('goalMonths').value || 12;
-  if (!name || target <= 0) return alert('Заполните поля');
-  state.goals.push({ name, target, saved: 0, monthsLeft: months });
-  saveLocalItems();
-  render();
-}
-
-function depositGoal(index) {
-  let amountStr = prompt("Сколько отложить в эту цель? (Спишется из Общего бюджета)");
-  if (!amountStr) return;
-  let amount = +amountStr;
-  if (amount <= 0) return alert("Введите сумму больше 0");
   
-  let balances = calculateBalances();
-  if (balances.shared < amount) return alert("Недостаточно средств в общем бюджете!");
-
-  // Вносим в цель
-  state.goals[index].saved += amount;
+  if (!amount || amount <= 0) return alert('Введите сумму');
+  if (!cat) return alert('Введите или выберите категорию');
   
-  // Создаем транзакцию, чтобы уменьшить общий бюджет
-  addTxFromGoal(amount);
+  await fetch(`${BACKEND_URL}/api/add_tx_notify?user_id=${userId}&amount=${amount}&category=${encodeURIComponent(cat)}&description=${encodeURIComponent(desc)}&source=${source}`, {method: 'POST'});
+  
+  document.getElementById('txAmount').value = '';
+  document.getElementById('txCategoryInput').value = ''; // Очищаем поле
+  document.getElementById('txDescription').value = '';
+  loadData();
 }
 
-async function addTxFromGoal(amount) {
-  let category = "Пополнение цели";
-  let source = "shared";
-  try {
-    await fetch(`${BACKEND_URL}/api/add_tx?user_id=${userId}&amount=${amount}&category=${encodeURIComponent(category)}&source=${source}`, { method: 'POST' });
-    saveLocalItems();
-    await loadData();
-  } catch (e) { alert("Ошибка соединения"); }
+// --- Дополнительные функции (План, Долги, ЗП) ---
+async function addScheduleIncome() {
+  let name = document.getElementById('incName').value;
+  let amount = +document.getElementById('incAmount').value;
+  let day = +document.getElementById('incDay').value;
+  if (!name || !amount || !day) return alert('Заполните поля');
+  await fetch(`${BACKEND_URL}/api/schedule_income?user_id=${userId}&name=${encodeURIComponent(name)}&amount=${amount}&day=${day}`, {method: 'POST'});
+  loadData();
 }
 
-// --- ЛИМИТЫ / WISHLIST ---
-function addLimit() {
-  let name = document.getElementById('limitName').value.trim();
-  let limit = +document.getElementById('limitAmount').value;
-  if (!name || limit <= 0) return alert('Заполните поля');
-  state.limits.push({ name, limit });
-  saveLocalItems();
-  render();
+async function loadScheduleAndFixed() {
+  let resInc = await fetch(`${BACKEND_URL}/api/get_schedule_income?user_id=${userId}`);
+  let incs = await resInc.json();
+  document.getElementById('incomesList').innerHTML = incs.length ? incs.map(i => `<div class="tx"><div>${i.name} (${i.day_of_month})</div><div class="positive">+${fmt(i.amount)}</div></div>`).join('') : 'Нет записей';
+
+  let resFix = await fetch(`${BACKEND_URL}/api/get_fixed?user_id=${userId}`);
+  let fixes = await resFix.json();
+  document.getElementById('fixedList').innerHTML = fixes.length ? fixes.map(f => `<div class="tx"><div>${f.name} (${f.day_of_month})</div><div class="negative">−${fmt(f.amount)}</div></div>`).join('') : 'Нет записей';
 }
 
-function addWish() {
-  let name = document.getElementById('wishName').value.trim();
-  let price = +document.getElementById('wishPrice').value;
-  let priority = document.getElementById('wishPriority').value;
-  if (!name || price <= 0) return alert('Заполните поля');
-  state.wishes.push({ name, price, priority, saved: 0 });
-  saveLocalItems();
-  render();
+async function addFixedExpense() {
+  let name = document.getElementById('fixName').value;
+  let amount = +document.getElementById('fixAmount').value;
+  let day = +document.getElementById('fixDay').value;
+  if (!name || !amount || !day) return alert('Заполните поля');
+  await fetch(`${BACKEND_URL}/api/add_fixed?user_id=${userId}&name=${encodeURIComponent(name)}&amount=${amount}&day=${day}`, {method: 'POST'});
+  loadData();
 }
 
-// --- РАСЧЕТЫ ---
-function calculateBalances() {
-  let totalIncome = state.partnerA.income + state.partnerB.income;
-  let sharedSpent = 0, personalASpent = 0, personalBSpent = 0;
+async function addDebt() {
+  let amount = +document.getElementById('debtAmount').value;
+  let desc = document.getElementById('debtDesc').value;
+  let type = document.getElementById('debtBorrower').value;
+  if (!amount || !desc || !partnerId) return alert('Заполните поля и убедитесь, что есть партнёр');
+  
+  let lender = type === 'me' ? partnerId : userId;
+  let borrower = type === 'me' ? userId : partnerId;
 
-  state.transactions.forEach(tx => {
-    if (tx.source === 'shared') sharedSpent += tx.amount;
-    if (tx.source === 'personalA') personalASpent += tx.amount;
-    if (tx.source === 'personalB') personalBSpent += tx.amount;
-  });
-
-  return {
-    shared: totalIncome - sharedSpent,
-    walletA: state.partnerA.income - personalASpent,
-    walletB: state.partnerB.income - personalBSpent
-  };
+  await fetch(`${BACKEND_URL}/api/add_debt?lender_id=${lender}&borrower_id=${borrower}&amount=${amount}&description=${encodeURIComponent(desc)}`, {method: 'POST'});
+  loadData();
 }
 
-function getLimitStatus(limitObj) {
-  let spent = state.transactions.filter(tx => tx.category === limitObj.name && tx.source === 'shared').reduce((s, tx) => s + tx.amount, 0);
-  let pct = (limitObj.limit > 0) ? (spent / limitObj.limit) * 100 : 0;
-  let level = pct >= 100 ? 'danger' : pct >= 80 ? 'warn' : 'ok';
-  return { spent, pct, level };
-}
-
-// --- РЕДАКТИРОВАНИЕ ТРАТ (СПОСОБ: УДАЛИТЬ И ДОБАВИТЬ) ---
-async function editTx(tx) {
-  if (!tx.id) {
-    return alert("Сервер не передал ID этой записи. Пожалуйста, обновите сервер.");
-  }
-
-  // Спрашиваем новые данные
-  let newAmount = prompt(`Изменить сумму для "${tx.category}"? (Было: ${tx.amount})`, tx.amount);
-  if (newAmount === null) return; // Пользователь нажал "Отмена"
-  newAmount = +newAmount;
-
-  let newCategory = prompt(`Изменить категорию?`, tx.category);
-  if (newCategory === null) return;
-  newCategory = newCategory.trim() || 'Без категории';
-
-  if (newAmount <= 0) return alert("Сумма должна быть больше 0");
-
-  try {
-    // 1. Удаляем старую запись
-    await fetch(`${BACKEND_URL}/api/delete_tx?tx_id=${tx.id}&user_id=${userId}`, { method: 'DELETE' });
-    
-    // 2. Создаем новую с правильными данными
-    await fetch(`${BACKEND_URL}/api/add_tx?user_id=${userId}&amount=${newAmount}&category=${encodeURIComponent(newCategory)}&source=${tx.source}`, { method: 'POST' });
-    
-    // 3. Обновляем экран
-    await loadData();
-    alert("Запись успешно обновлена!");
-  } catch (e) {
-    alert("Ошибка при редактировании. Проверьте интернет.");
-  }
-}
-
-// --- ОТРИСОВКА ---
-function render() {
-  document.getElementById('nameA').value = state.partnerA.name || '';
-  document.getElementById('incomeA').value = state.partnerA.income || '';
-  document.getElementById('nameB').value = state.partnerB.name || '';
-  document.getElementById('incomeB').value = state.partnerB.income || '';
-
-  let total = state.partnerA.income + state.partnerB.income;
-  if (total > 0) {
-    let pA = (state.partnerA.income / total * 100).toFixed(0);
-    document.getElementById('splitInfo').innerHTML = `Взносы: <b>${state.partnerA.name}</b> — ${pA}%, <b>${state.partnerB.name}</b> — ${100-pA}%`;
-  } else {
-    document.getElementById('splitInfo').innerHTML = 'Введите доходы, чтобы увидеть пропорцию.';
-  }
-
-  let balances = calculateBalances();
-  document.getElementById('sharedBalance').textContent = fmt(balances.shared);
-  document.getElementById('walletAName').textContent = (state.partnerA.name || 'Ваш') + ' кошелёк';
-  document.getElementById('walletBName').textContent = (state.partnerB.name || 'Партнёра') + ' кошелёк';
-  document.getElementById('walletA').textContent = fmt(balances.walletA);
-  document.getElementById('walletB').textContent = fmt(balances.walletB);
-
-  // Цели (с кнопкой пополнения)
-  let goalsHtml = '';
-  if (state.goals.length === 0) goalsHtml = 'Нет целей';
-  else {
-    goalsHtml = state.goals.map((g, idx) => {
-      let pct = Math.min(100, (g.saved / g.target) * 100);
-      return `
-        <div class="goal">
-          <div class="goal-head"><span><b>${g.name}</b></span><span>${fmt(g.saved)} / ${fmt(g.target)}</span></div>
-          <div class="bar"><div style="width:${pct}%"></div></div>
-          <div style="display:flex; gap:6px; margin-top:8px;">
-            <button class="small secondary" onclick="depositGoal(${idx})">+ Пополнить</button>
-            <button class="small secondary" onclick="state.goals.splice(${idx},1); saveLocalItems(); render();">✕</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-  document.getElementById('goals').innerHTML = goalsHtml;
-
-  // Лимиты
-  let limitsHtml = '';
-  if (state.limits.length === 0) limitsHtml = 'Лимиты не заданы';
-  else {
-    limitsHtml = state.limits.map((l, idx) => {
-      let s = getLimitStatus(l);
-      let w = Math.min(100, s.pct);
-      return `
-        <div class="limit-item ${s.level}">
-          <div class="limit-head">
-            <span><b>${l.name}</b></span>
-            <span>${fmt(s.spent)} / ${fmt(l.limit)} <span class="badge ${s.level}">${s.pct.toFixed(0)}%</span>
-            <button class="secondary small" onclick="state.limits.splice(${idx},1); saveLocalItems(); render();" style="width:auto; padding:2px 8px; margin-left:6px;">✕</button></span>
-          </div>
-          <div class="limit-bar"><div class="${s.level}" style="width:${w}%"></div></div>
-        </div>
-      `;
-    }).join('');
-  }
-  document.getElementById('limitsList').innerHTML = limitsHtml;
-
-  // График
-  let chartHtml = '';
-  let recentTx = state.transactions.slice(0, 10).reverse();
-  if (recentTx.length > 1) {
-    let maxAmt = Math.max(...recentTx.map(t => t.amount));
-    let points = recentTx.map((t, i) => {
-      let x = (i / (recentTx.length - 1)) * 280 + 10;
-      let y = 150 - (t.amount / maxAmt) * 120;
-      return `${x},${y}`;
-    }).join(' ');
-    chartHtml = `
-      <div class="chart-container">
-        <svg class="chart-svg" viewBox="0 0 300 160" preserveAspectRatio="none">
-          <polyline points="${points}" fill="none" stroke="var(--button)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-        </svg>
+async function loadDebts() {
+  let res = await fetch(`${BACKEND_URL}/api/get_debts?user_id=${userId}`);
+  let debts = await res.json();
+  document.getElementById('debtsList').innerHTML = debts.length ? debts.map(d => `
+    <div class="tx">
+      <div>${d.description} <span class="muted">(${d.is_paid ? 'Оплачено' : 'Активен'})</span></div>
+      <div class="${d.lender_id === userId ? 'positive' : 'negative'}">
+        ${d.lender_id === userId ? 'Вам должны: ' : 'Вы должны: '}${fmt(d.amount)}
       </div>
-    `;
-  } else {
-    chartHtml = 'Нет данных для графика';
-  }
-  document.getElementById('chartBlock').innerHTML = chartHtml;
-
-  // Wishlist
-  let wishHtml = '';
-  if (state.wishes.length === 0) wishHtml = 'Пусто';
-  else {
-    wishHtml = state.wishes.map((w, idx) => `
-      <div class="wish-item priority-${w.priority}">
-        <div class="wish-body">
-          <div class="wish-title">${w.name}</div>
-          <div class="muted">${fmt(w.saved)} из ${fmt(w.price)}</div>
-        </div>
-        <button class="secondary small" onclick="state.wishes.splice(${idx},1); saveLocalItems(); render();" style="width:auto;">✕</button>
-      </div>
-    `).join('');
-  }
-  document.getElementById('wishlist').innerHTML = wishHtml;
-
-  // Помощник
-  let advice = [];
-  if (balances.shared < 0) advice.push('<div class="advice-item danger">🚨 Вы ушли в минус по общему бюджету!</div>');
-  else if (balances.shared > 0) advice.push(`<div class="advice-item ok">✅ В общем бюджете осталось ${fmt(balances.shared)}.</div>`);
-
-  state.limits.forEach(l => {
-    let s = getLimitStatus(l);
-    if (s.level === 'danger') advice.push(`<div class="advice-item danger">🚨 Лимит «${l.name}» превышен!</div>`);
-    else if (s.level === 'warn') advice.push(`<div class="advice-item warn">🟡 Лимит «${l.name}» почти исчерпан.</div>`);
-  });
-
-  document.getElementById('adviceBlock').innerHTML = advice.join('');
-
-  // История
-  let list = document.getElementById('txList');
-  if (state.transactions.length === 0) {
-    list.innerHTML = 'Пока нет трат';
-  } else {
-    list.innerHTML = state.transactions.map(tx => {
-      let srcName = tx.source === 'shared' ? 'Общий' : (tx.source === 'personalA' ? 'Личный (Вы)' : 'Личный (Партнёр)');
-      return `
-        <div class="tx">
-          <div><div><b>${tx.category}</b></div><div class="muted" style="font-size: 12px;">${srcName}</div></div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div class="negative" style="font-weight: bold;">−${fmt(tx.amount)}</div>
-            <button class="secondary small" onclick='editTx(${JSON.stringify(tx)})' style="width:auto; padding:4px 8px;">✏️</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
+    </div>
+  `).join('') : 'Нет долгов';
 }
 
 loadData();
