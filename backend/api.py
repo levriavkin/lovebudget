@@ -6,6 +6,9 @@ import time
 import os
 import logging
 from contextlib import asynccontextmanager
+import asyncio
+from datetime import datetime
+import calendar
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, CommandObject
@@ -22,8 +25,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- БАЗА ДАННЫХ ---
-# Используем /tmp для надежности на Render
-DATABASE_URL = "sqlite:////tmp/database_v4.db" 
+DATABASE_URL = "sqlite:////tmp/database_v5.db" # Снова обновили версию БД
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # --- МОДЕЛИ ---
@@ -31,8 +33,8 @@ class User(SQLModel, table=True):
     id: int = Field(primary_key=True)
     partner_id: Optional[int] = None
     name: str = "Пользователь"
-    personal_income: float = 0.0 # Личные деньги
-    shared_income: float = 0.0   # Взнос в общий котёл
+    personal_income: float = 0.0 
+    shared_income: float = 0.0   
 
 class Category(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -46,7 +48,7 @@ class Transaction(SQLModel, table=True):
     amount: float
     category: str
     description: str = ""
-    source: str # shared (общий) или personal (личный)
+    source: str 
     timestamp: float
 
 class ScheduledIncome(SQLModel, table=True):
@@ -62,11 +64,11 @@ class FixedExpense(SQLModel, table=True):
     name: str
     amount: float
     day_of_month: int
+    last_charged_month: Optional[str] = None # Чтобы не списывать дважды в месяц
 
 class Debt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     pair_id: int
-    # Если это долг партнёру, тут будут ID. Если третьему лицу — None.
     lender_id: Optional[int] = None 
     borrower_id: Optional[int] = None 
     name: str = "Партнёр" 
@@ -91,6 +93,60 @@ async def notify_partner(user_id: int, text: str):
         if user and user.partner_id:
             try: await bot.send_message(chat_id=user.partner_id, text=f"🔔 {text}")
             except: pass
+
+async def notify_user(user_id: int, text: str):
+    try: await bot.send_message(chat_id=user_id, text=f"🔔 {text}")
+    except: pass
+
+# --- АВТОМАТИЗАЦИЯ (CRON) ---
+async def check_fixed_expenses():
+    """Фоновая задача: проверяет, не пора ли списать постоянные траты или напомнить о них."""
+    while True:
+        try:
+            now = datetime.now()
+            current_day = now.day
+            current_month_str = now.strftime("%Y-%m")
+            days_in_month = calendar.monthrange(now.year, now.month)[1]
+            
+            with Session(engine) as session:
+                all_fixed = session.exec(select(FixedExpense)).all()
+                
+                for fx in all_fixed:
+                    # 1. УВЕДОМЛЕНИЕ ЗА ДЕНЬ ДО СПИСАНИЯ
+                    # Если сегодня (день - 1) равен дню списания
+                    is_tomorrow = (current_day + 1 == fx.day_of_month) or (current_day == days_in_month and fx.day_of_month == 1)
+                    if is_tomorrow:
+                        # Находим пользователей пары, чтобы отправить уведомление
+                        users = session.exec(select(User).where((User.id == fx.pair_id) | (User.partner_id == fx.pair_id))).all()
+                        for u in users:
+                            await notify_user(u.id, f"Завтра спишется {fx.amount} ₽ за «{fx.name}». Не забудьте пополнить бюджет!")
+
+                    # 2. АВТОМАТИЧЕСКОЕ СПИСАНИЕ
+                    # Если сегодня день списания и мы еще не списывали в этом месяце
+                    if current_day == fx.day_of_month and fx.last_charged_month != current_month_str:
+                        # Ищем, кто из партнеров инициирует (берем первого)
+                        user = session.get(User, fx.pair_id)
+                        if user:
+                            tx = Transaction(
+                                user_id=fx.pair_id, 
+                                amount=fx.amount, 
+                                category="Постоянные траты", 
+                                description=f"Авто: {fx.name}", 
+                                source="shared", 
+                                timestamp=time.time()
+                            )
+                            session.add(tx)
+                            fx.last_charged_month = current_month_str
+                            session.add(fx)
+                            session.commit()
+                            
+                            # Уведомляем о списании
+                            await notify_user(fx.pair_id, f"✅ Автоматически списано {fx.amount} ₽ за «{fx.name}».")
+                            
+        except Exception as e:
+            logger.error(f"Cron error: {e}")
+            
+        await asyncio.sleep(3600) # Проверяем каждый час
 
 # --- ОБРАБОТЧИКИ БОТА ---
 @dp.message(CommandStart())
@@ -125,17 +181,18 @@ async def cb_invite(call: types.CallbackQuery):
     ])
     await call.message.edit_text(f"<b>👥 Ссылка:</b>\n<code>{invite_link}</code>", reply_markup=share_kb, parse_mode="HTML")
 
-@dp.callback_query(lambda c: c.data == "main_menu")
-async def cb_main_menu(call: types.CallbackQuery):
-    await call.answer()
-    await call.message.edit_text("Меню:", reply_markup=get_main_kb())
-
 # --- FASTAPI ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     await bot.set_webhook(f"{RENDER_URL}/webhook/{BOT_TOKEN}", drop_pending_updates=True)
+    
+    # Запускаем фоновую задачу
+    asyncio.create_task(check_fixed_expenses())
+    logger.info("Фоновая задача автоплатежей запущена")
+    
     yield
+    
     await bot.delete_webhook(); await bot.session.close()
 
 app = FastAPI(lifespan=lifespan)
@@ -162,26 +219,11 @@ def sync_data(user_id: int, session: Session = Depends(lambda: Session(engine)))
     
     partner = session.get(User, user.partner_id) if user.partner_id else None
     pair_id = get_pair_id(user_id, session)
-    
     user_ids = [user.id] + ([partner.id] if partner else [])
     transactions = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids))).all()
-    
     visible_transactions = [tx for tx in transactions if tx.source == 'shared' or tx.user_id == user_id]
 
-    return {
-        "user": user, 
-        "partner": partner, 
-        "pair_id": pair_id,
-        "transactions": visible_transactions
-    }
-
-@app.post("/api/setup")
-def setup_user(user_id: int, name: str, personal: float, shared: float, session: Session = Depends(lambda: Session(engine))):
-    user = session.get(User, user_id)
-    if not user: user = User(id=user_id)
-    user.name = name; user.personal_income = personal; user.shared_income = shared
-    session.add(user); session.commit()
-    return {"status": "success"}
+    return {"user": user, "partner": partner, "pair_id": pair_id, "transactions": visible_transactions}
 
 @app.post("/api/add_tx_notify")
 async def add_transaction_notify(user_id: int, amount: float, category: str, description: str = "", source: str = "shared", session: Session = Depends(lambda: Session(engine))):
@@ -190,7 +232,17 @@ async def add_transaction_notify(user_id: int, amount: float, category: str, des
     await notify_partner(user_id, f"Трата: {category} на {amount} ₽.")
     return {"status": "success"}
 
-# --- КАТЕГОРИИ ---
+@app.post("/api/add_manual_income")
+async def add_manual_income(user_id: int, amount: float, source: str, description: str = "Пополнение", session: Session = Depends(lambda: Session(engine))):
+    user = session.get(User, user_id)
+    if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if source == "shared": user.shared_income += amount
+    else: user.personal_income += amount
+    session.add(user); session.commit()
+    await notify_partner(user_id, f"Пополнение: +{amount} ₽.")
+    return {"status": "success"}
+
+# --- КАТЕГОРИИ И АНАЛИТИКА ---
 @app.post("/api/add_category")
 def add_category(user_id: int, name: str, limit: float = 0.0, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
@@ -207,34 +259,16 @@ def get_categories(user_id: int, session: Session = Depends(lambda: Session(engi
     pair_id = get_pair_id(user_id, session)
     return session.exec(select(Category).where(Category.pair_id == pair_id)).all()
 
-# --- АНАЛИТИКА ---
 @app.get("/api/category_analytics")
 def category_analytics(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
     user_ids = [user_id]
     user = session.get(User, user_id)
     if user.partner_id: user_ids.append(user.partner_id)
-    
     txs = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids), Transaction.source == 'shared')).all()
     stats = {}
     for tx in txs: stats[tx.category] = stats.get(tx.category, 0) + tx.amount
     return stats
-
-@app.get("/api/get_analytics")
-def get_analytics(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    pair_id = get_pair_id(user_id, session)
-    user = session.get(User, user_id)
-    user_ids = [user_id]
-    if user and user.partner_id: user_ids.append(user.partner_id)
-    
-    txs = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids), Transaction.source == 'shared')).all()
-    
-    total_spent = sum(tx.amount for tx in txs)
-    categories = {}
-    for tx in txs:
-        categories[tx.category] = categories.get(tx.category, 0) + tx.amount
-        
-    return {"total": total_spent, "categories": categories}
 
 # --- ПЛАН ---
 @app.post("/api/add_fixed")
@@ -246,18 +280,10 @@ def add_fixed(user_id: int, name: str, amount: float, day: int, session: Session
 @app.get("/api/get_fixed")
 def get_fixed(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
-    return sorted(session.exec(select(FixedExpense).where(FixedExpense.pair_id == pair_id)).all(), key=lambda x: x.day_of_month)
-
-@app.post("/api/schedule_income")
-def add_schedule_income(user_id: int, name: str, amount: float, day: int, session: Session = Depends(lambda: Session(engine))):
-    pair_id = get_pair_id(user_id, session)
-    session.add(ScheduledIncome(pair_id=pair_id, name=name, amount=amount, day_of_month=day))
-    session.commit(); return {"status": "success"}
-
-@app.get("/api/get_schedule_income")
-def get_schedule_income(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    pair_id = get_pair_id(user_id, session)
-    return session.exec(select(ScheduledIncome).where(ScheduledIncome.pair_id == pair_id)).all()
+    fixes = session.exec(select(FixedExpense).where(FixedExpense.pair_id == pair_id)).all()
+    sorted_fixes = sorted(fixes, key=lambda x: x.day_of_month)
+    total_amount = sum(f.amount for f in sorted_fixes)
+    return {"items": sorted_fixes, "total": total_amount}
 
 # --- ДОЛГИ ---
 @app.post("/api/add_debt")
@@ -265,12 +291,10 @@ def add_debt(user_id: int, amount: float, description: str, name: str = "Пар�
     pair_id = get_pair_id(user_id, session)
     user = session.get(User, user_id)
     
-    # Если имя "Партнёр" - используем ID для связки
     if name == "Партнёр":
         lender = user_id if is_plus else (user.partner_id if user and user.partner_id else 0)
         borrower = (user.partner_id if user and user.partner_id else 0) if is_plus else user_id
     else:
-        # Если третье лицо - ID не нужны, просто записываем имя
         lender = user_id if is_plus else None
         borrower = None if is_plus else user_id
     
@@ -287,21 +311,9 @@ def get_debts(user_id: int, session: Session = Depends(lambda: Session(engine)))
 def update_debt(debt_id: int, amount: float, is_paid: bool, session: Session = Depends(lambda: Session(engine))):
     debt = session.get(Debt, debt_id)
     if debt:
-        debt.amount = amount
+        if amount > 0: # Если сумма не 0, обновляем
+            debt.amount = amount
         debt.is_paid = is_paid
         session.add(debt); session.commit()
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Долг не найден")
-
-# --- РУЧНОЕ ПОПОЛНЕНИЕ ---
-@app.post("/api/add_manual_income")
-async def add_manual_income(user_id: int, amount: float, source: str, description: str = "Пополнение", session: Session = Depends(lambda: Session(engine))):
-    user = session.get(User, user_id)
-    if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
-        
-    if source == "shared": user.shared_income += amount
-    else: user.personal_income += amount
-        
-    session.add(user); session.commit()
-    await notify_partner(user_id, f"Пополнение ({'Общий' if source == 'shared' else 'Личный'}): +{amount} ₽ ({description}).")
-    return {"status": "success"}
