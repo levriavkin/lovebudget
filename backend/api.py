@@ -12,21 +12,18 @@ from aiogram.filters import CommandStart, CommandObject, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from dotenv import load_dotenv
 
-# --- НАСТРОЙКИ ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://levriavkin.github.io/lovebudget/")
 RENDER_URL = os.getenv("RENDER_URL", "https://lovebudget-u4ez.onrender.com") 
 BOT_USERNAME = "love_budget_bot" 
 
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не найден!")
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- БАЗА ДАННЫХ ---
-DATABASE_URL = "sqlite:////tmp/database.db" 
+# ВАЖНО: Я изменил название базы на database_v3.db, чтобы старые данные не ломали новые таблицы
+DATABASE_URL = "sqlite:////tmp/database_v3.db" 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # --- МОДЕЛИ ---
@@ -34,11 +31,12 @@ class User(SQLModel, table=True):
     id: int = Field(primary_key=True)
     partner_id: Optional[int] = None
     name: str = "Пользователь"
-    income: float = 0.0
+    personal_income: float = 0.0 # Личные деньги
+    shared_income: float = 0.0   # Взнос в общий котёл
 
 class Category(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int
+    pair_id: int # ID одного из партнёров (для привязки к паре)
     name: str
     limit_amount: float = 0.0
 
@@ -48,28 +46,28 @@ class Transaction(SQLModel, table=True):
     amount: float
     category: str
     description: str = ""
-    source: str
+    source: str # shared (общий) или personal (личный)
     timestamp: float
 
 class ScheduledIncome(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int
+    pair_id: int
     name: str
     amount: float
     day_of_month: int
 
 class FixedExpense(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int
+    pair_id: int
     name: str
     amount: float
     day_of_month: int
-    category: str = "Обязательные"
 
 class Debt(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    lender_id: int
-    borrower_id: int
+    pair_id: int
+    lender_id: int # Кто дал
+    borrower_id: int # Кто взял
     amount: float
     description: str
     is_paid: bool = False
@@ -85,141 +83,102 @@ def get_main_kb():
         [InlineKeyboardButton(text="👥 Пригласить партнёра", callback_data="invite")]
     ])
 
-# --- ФУНКЦИЯ УВЕДОМЛЕНИЙ ---
 async def notify_partner(user_id: int, text: str):
     with Session(engine) as session:
         user = session.get(User, user_id)
         if user and user.partner_id:
-            try:
-                await bot.send_message(chat_id=user.partner_id, text=f"🔔 Уведомление:\n\n{text}")
-            except Exception as e:
-                logger.error(f"Не удалось отправить уведомление: {e}")
+            try: await bot.send_message(chat_id=user.partner_id, text=f"🔔 {text}")
+            except: pass
 
 # --- ОБРАБОТЧИКИ БОТА ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message, command: CommandObject = None):
-    try:
-        user_id = message.from_user.id
-        args = command.args if command else None
-        logger.info(f"🔗 /start. Аргументы: '{args}' от {user_id}")
+    user_id = message.from_user.id
+    args = command.args if command else None
 
-        if args and args.startswith("pair_"):
-            try:
-                partner_id = int(args.replace("pair_", ""))
-                if partner_id == user_id:
-                    await message.answer("Нельзя пригласить самого себя 🙂")
-                    return
-                with Session(engine) as session:
-                    user = session.get(User, user_id)
-                    partner = session.get(User, partner_id)
-                    if not user: user = User(id=user_id); session.add(user)
-                    if not partner: partner = User(id=partner_id); session.add(partner)
-                    user.partner_id = partner_id
-                    partner.partner_id = user_id
-                    session.commit()
-                    logger.info(f"✅ УСПЕХ: {user_id} и {partner_id} теперь пара!")
-                await message.answer("🎉 Отлично! Вы связаны как пара.", reply_markup=get_main_kb())
-                return
-            except Exception as e:
-                logger.error(f"❌ ОШИБКА СВЯЗЫВАНИЯ: {e}")
-                await message.answer("Ошибка связывания.")
-                return
-
-        with Session(engine) as session:
-            user = session.get(User, user_id)
-            partner_text = f"✅ Вы в паре с ID: {user.partner_id}" if user and user.partner_id else "❌ Партнёр не привязан"
-        
+    if args and args.startswith("pair_"):
+        try:
+            partner_id = int(args.replace("pair_", ""))
+            if partner_id == user_id: return await message.answer("Нельзя пригласить себя 🙂")
+            
+            with Session(engine) as session:
+                user = session.get(User, user_id) or User(id=user_id)
+                partner = session.get(User, partner_id) or User(id=partner_id)
+                user.partner_id = partner_id; partner.partner_id = user_id
+                session.add(user); session.add(partner); session.commit()
+            await message.answer("🎉 Вы связаны как пара!", reply_markup=get_main_kb())
+        except Exception as e:
+            await message.answer("Ошибка связывания.")
+    else:
         name = message.from_user.first_name or "друг"
-        await message.answer(f"Привет, {name}! 👋\n\n{partner_text}", reply_markup=get_main_kb())
-    except Exception as e:
-        logger.error(f"Ошибка в cmd_start: {e}")
-
-@dp.message(Command("help"))
-async def cmd_help(message: types.Message):
-    await message.answer("Нажми «💰 Открыть бюджет» или «👥 Пригласить партнёра».", reply_markup=get_main_kb())
+        await message.answer(f"Привет, {name}! 👋", reply_markup=get_main_kb())
 
 @dp.callback_query(lambda c: c.data == "invite")
 async def cb_invite(call: types.CallbackQuery):
-    try:
-        await call.answer()
-        user_id = call.from_user.id
-        try:
-            bot_username = (await bot.get_me()).username
-        except Exception:
-            bot_username = BOT_USERNAME
-        invite_link = f"https://t.me/{bot_username}?start=pair_{user_id}"
-        text = f"<b>👥 Пригласите партнёра</b>\n\n<code>{invite_link}</code>"
-        share_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
-        ])
-        await call.message.edit_text(text, reply_markup=share_kb, parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Ошибка в cb_invite: {e}")
+    await call.answer()
+    invite_link = f"https://t.me/{BOT_USERNAME}?start=pair_{call.from_user.id}"
+    share_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={invite_link}")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu")]
+    ])
+    await call.message.edit_text(f"<b>👥 Ссылка:</b>\n<code>{invite_link}</code>", reply_markup=share_kb, parse_mode="HTML")
 
 @dp.callback_query(lambda c: c.data == "main_menu")
 async def cb_main_menu(call: types.CallbackQuery):
-    try:
-        await call.answer()
-        await call.message.edit_text("Главное меню:", reply_markup=get_main_kb())
-    except Exception as e:
-        logger.error(f"Ошибка в cb_main_menu: {e}")
+    await call.answer()
+    await call.message.edit_text("Меню:", reply_markup=get_main_kb())
 
-# --- FASTAPI APP ---
+# --- FASTAPI ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
-    webhook_url = f"{RENDER_URL}/webhook/{BOT_TOKEN}"
-    try:
-        await bot.set_webhook(webhook_url, drop_pending_updates=True)
-        logger.info(f"✅ Webhook установлен: {webhook_url}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка вебхука: {e}")
+    await bot.set_webhook(f"{RENDER_URL}/webhook/{BOT_TOKEN}", drop_pending_updates=True)
     yield
-    await bot.delete_webhook()
-    await bot.session.close()
+    await bot.delete_webhook(); await bot.session.close()
 
 app = FastAPI(lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.post(f"/webhook/{BOT_TOKEN}")
 async def telegram_webhook(request: Request):
-    try:
-        update_data = await request.json()
-        update = types.Update(**update_data)
-        await dp.feed_update(bot, update)
-        return {"ok": True}
-    except Exception as e:
-        logger.error(f"Ошибка в webhook: {e}")
-        return {"ok": False}
+    update = types.Update(**await request.json())
+    await dp.feed_update(bot, update)
+    return {"ok": True}
 
-# --- API ДЛЯ ПРИЛОЖЕНИЯ ---
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "LoveBudget Full Service"}
+# --- API ---
+def get_pair_id(user_id: int, session: Session):
+    user = session.get(User, user_id)
+    if user and user.partner_id:
+        return min(user_id, user.partner_id) # Возвращаем ID младшего партнёра как ключ пары
+    return user_id
 
 @app.get("/api/sync")
 def sync_data(user_id: int, session: Session = Depends(lambda: Session(engine))):
     user = session.get(User, user_id)
     if not user:
         user = User(id=user_id); session.add(user); session.commit(); session.refresh(user)
+    
     partner = session.get(User, user.partner_id) if user.partner_id else None
-    user_ids = [user.id]
-    if partner: user_ids.append(partner.id)
+    pair_id = get_pair_id(user_id, session)
+    
+    user_ids = [user.id] + ([partner.id] if partner else [])
     transactions = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids))).all()
-    return {"user": user, "partner": partner, "transactions": transactions}
+    
+    # Скрываем личные транзакции партнёра
+    visible_transactions = [tx for tx in transactions if tx.source == 'shared' or tx.user_id == user_id]
+
+    return {
+        "user": user, 
+        "partner": partner, 
+        "pair_id": pair_id,
+        "transactions": visible_transactions
+    }
 
 @app.post("/api/setup")
-def setup_user(user_id: int, name: str, income: float, session: Session = Depends(lambda: Session(engine))):
+def setup_user(user_id: int, name: str, personal: float, shared: float, session: Session = Depends(lambda: Session(engine))):
     user = session.get(User, user_id)
     if not user: user = User(id=user_id)
-    user.name = name; user.income = income
+    user.name = name; user.personal_income = personal; user.shared_income = shared
     session.add(user); session.commit()
     return {"status": "success"}
 
@@ -227,83 +186,71 @@ def setup_user(user_id: int, name: str, income: float, session: Session = Depend
 async def add_transaction_notify(user_id: int, amount: float, category: str, description: str = "", source: str = "shared", session: Session = Depends(lambda: Session(engine))):
     tx = Transaction(user_id=user_id, amount=amount, category=category, description=description, source=source, timestamp=time.time())
     session.add(tx); session.commit()
-    await notify_partner(user_id, f"Трата: {category} ({description}) на {amount} ₽.")
+    await notify_partner(user_id, f"Трата: {category} на {amount} ₽.")
     return {"status": "success"}
 
-@app.delete("/api/delete_tx")
-def delete_transaction(tx_id: int, user_id: int, session: Session = Depends(lambda: Session(engine))):
-    tx = session.get(Transaction, tx_id)
-    if tx and tx.user_id == user_id:
-        session.delete(tx); session.commit()
-        return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Не найдено")
-
-# --- КАТЕГОРИИ ---
+# --- КАТЕГОРИИ (ОБЩИЕ) ---
 @app.post("/api/add_category")
-def add_category(user_id: int, name: str, limit_amount: float = 0.0, session: Session = Depends(lambda: Session(engine))):
-    existing = session.exec(select(Category).where(Category.user_id == user_id, Category.name == name)).first()
+def add_category(user_id: int, name: str, limit: float = 0.0, session: Session = Depends(lambda: Session(engine))):
+    pair_id = get_pair_id(user_id, session)
+    existing = session.exec(select(Category).where(Category.pair_id == pair_id, Category.name == name)).first()
     if existing:
-        existing.limit_amount = limit_amount
-        session.add(existing)
+        existing.limit_amount = limit; session.add(existing)
     else:
-        cat = Category(user_id=user_id, name=name, limit_amount=limit_amount)
-        session.add(cat)
+        session.add(Category(pair_id=pair_id, name=name, limit_amount=limit))
     session.commit()
     return {"status": "success"}
 
 @app.get("/api/get_categories")
 def get_categories(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    return session.exec(select(Category).where(Category.user_id == user_id)).all()
+    pair_id = get_pair_id(user_id, session)
+    return session.exec(select(Category).where(Category.pair_id == pair_id)).all()
 
+# --- АНАЛИТИКА (Только общие траты) ---
 @app.get("/api/category_analytics")
 def category_analytics(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    user = session.get(User, user_id)
+    pair_id = get_pair_id(user_id, session)
     user_ids = [user_id]
-    if user and user.partner_id: user_ids.append(user.partner_id)
-    transactions = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids))).all()
+    user = session.get(User, user_id)
+    if user.partner_id: user_ids.append(user.partner_id)
+    
+    txs = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids), Transaction.source == 'shared')).all()
     stats = {}
-    for tx in transactions:
-        if tx.source == 'shared': stats[tx.category] = stats.get(tx.category, 0) + tx.amount
+    for tx in txs: stats[tx.category] = stats.get(tx.category, 0) + tx.amount
     return stats
 
-# --- РАСПИСАНИЕ И ПОСТОЯННЫЕ ---
-@app.post("/api/schedule_income")
-def add_schedule_income(user_id: int, name: str, amount: float, day: int, session: Session = Depends(lambda: Session(engine))):
-    item = ScheduledIncome(user_id=user_id, name=name, amount=amount, day_of_month=day)
-    session.add(item); session.commit()
-    return {"status": "success"}
-
-@app.get("/api/get_schedule_income")
-def get_schedule_income(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    return session.exec(select(ScheduledIncome).where(ScheduledIncome.user_id == user_id)).all()
-
+# --- ПЛАН (ОБЩИЙ) ---
 @app.post("/api/add_fixed")
 def add_fixed(user_id: int, name: str, amount: float, day: int, session: Session = Depends(lambda: Session(engine))):
-    item = FixedExpense(user_id=user_id, name=name, amount=amount, day_of_month=day)
-    session.add(item); session.commit()
-    return {"status": "success"}
+    pair_id = get_pair_id(user_id, session)
+    session.add(FixedExpense(pair_id=pair_id, name=name, amount=amount, day_of_month=day))
+    session.commit(); return {"status": "success"}
 
 @app.get("/api/get_fixed")
 def get_fixed(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    return session.exec(select(FixedExpense).where(FixedExpense.user_id == user_id)).all()
+    pair_id = get_pair_id(user_id, session)
+    # Сортируем по дню месяца
+    return sorted(session.exec(select(FixedExpense).where(FixedExpense.pair_id == pair_id)).all(), key=lambda x: x.day_of_month)
+
+@app.post("/api/schedule_income")
+def add_schedule_income(user_id: int, name: str, amount: float, day: int, session: Session = Depends(lambda: Session(engine))):
+    pair_id = get_pair_id(user_id, session)
+    session.add(ScheduledIncome(pair_id=pair_id, name=name, amount=amount, day_of_month=day))
+    session.commit(); return {"status": "success"}
+
+@app.get("/api/get_schedule_income")
+def get_schedule_income(user_id: int, session: Session = Depends(lambda: Session(engine))):
+    pair_id = get_pair_id(user_id, session)
+    return session.exec(select(ScheduledIncome).where(ScheduledIncome.pair_id == pair_id)).all()
 
 # --- ДОЛГИ ---
 @app.post("/api/add_debt")
 def add_debt(lender_id: int, borrower_id: int, amount: float, description: str, session: Session = Depends(lambda: Session(engine))):
-    debt = Debt(lender_id=lender_id, borrower_id=borrower_id, amount=amount, description=description, created_at=time.time())
-    session.add(debt); session.commit()
-    return {"status": "success"}
+    pair_id = get_pair_id(lender_id, session)
+    session.add(Debt(pair_id=pair_id, lender_id=lender_id, borrower_id=borrower_id, amount=amount, description=description, created_at=time.time()))
+    session.commit(); return {"status": "success"}
 
 @app.get("/api/get_debts")
 def get_debts(user_id: int, session: Session = Depends(lambda: Session(engine))):
-    debts = session.exec(select(Debt).where((Debt.lender_id == user_id) | (Debt.borrower_id == user_id))).all()
-    return debts
-
-@app.post("/api/pay_debt")
-def pay_debt(debt_id: int, session: Session = Depends(lambda: Session(engine))):
-    debt = session.get(Debt, debt_id)
-    if debt:
-        debt.is_paid = True
-        session.add(debt); session.commit()
-        return {"status": "success"}
-    raise HTTPException(status_code=404, detail="Долг не найден")
+    pair_id = get_pair_id(user_id, session)
+    return session.exec(select(Debt).where(Debt.pair_id == pair_id, Debt.is_paid == False)).all()
