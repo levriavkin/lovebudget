@@ -254,3 +254,27 @@ def add_debt(lender_id: int, borrower_id: int, amount: float, description: str, 
 def get_debts(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
     return session.exec(select(Debt).where(Debt.pair_id == pair_id, Debt.is_paid == False)).all()
+# --- РУЧНОЕ ПОПОЛНЕНИЕ БАЛАНСА ---
+@app.post("/api/add_manual_income")
+async def add_manual_income(user_id: int, amount: float, source: str, description: str = "Пополнение", session: Session = Depends(lambda: Session(engine))):
+    # Создаем транзакцию с отрицательной суммой (или используем type='income', если поменяли модель)
+    # В нашей текущей модели Transaction все траты идут в минус, поэтому для дохода используем отрицательную сумму
+    # Но лучше создать отдельную транзакцию дохода. 
+    # Для простоты (чтобы не ломать текущую логику баланса) мы просто увеличим доход пользователя в базе.
+    
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+        
+    if source == "shared":
+        user.shared_income += amount
+    else:
+        user.personal_income += amount
+        
+    session.add(user)
+    session.commit()
+    
+    # Отправляем уведомление партнёру
+    await notify_partner(user_id, f"Пополнение бюджета ({'Общий' if source == 'shared' else 'Личный'}): +{amount} ₽ ({description}).")
+    
+    return {"status": "success"}    
