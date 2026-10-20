@@ -21,7 +21,6 @@
   .row > * { flex: 1; min-width: 80px; }
   input, select, button { padding: 12px; border-radius: 10px; border: none; font-size: 15px; background: var(--bg); color: var(--text); width: 100%; outline: none; }
   button { background: var(--button); color: #fff; font-weight: bold; cursor: pointer; }
-  button.sec { background: var(--bg); color: var(--text); }
   .muted { color: var(--hint); font-size: 13px; }
   .positive { color: var(--positive); } .negative { color: var(--negative); }
   
@@ -37,6 +36,7 @@
   
   .debt-buttons { display: flex; gap: 8px; margin-top: 10px; }
   .debt-buttons button { font-size: 12px; padding: 8px; }
+  .tx { padding: 10px 0; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -45,6 +45,7 @@
 
 <div class="tabs">
   <div class="tab active" onclick="switchTab('main', event)">Главная</div>
+  <div class="tab" onclick="switchTab('incomes', event)">Доходы</div>
   <div class="tab" onclick="switchTab('categories', event)">Категории</div>
   <div class="tab" onclick="switchTab('plan', event)">План</div>
   <div class="tab" onclick="switchTab('debts', event)">Долги</div>
@@ -86,17 +87,48 @@
   </div>
 
   <div class="card">
-    <h3>📜 Последние траты (Общие и мои)</h3>
+    <h3>📜 Последние траты</h3>
     <div id="txList" class="muted">Загрузка...</div>
+  </div>
+</div>
+
+<!-- ВКЛАДКА ДОХОДОВ (НОВАЯ) -->
+<div id="tab-incomes" class="tab-content">
+  <div class="card">
+    <h3>💰 Ручное пополнение</h3>
+    <div class="row">
+      <input id="manualAmount" type="number" placeholder="Сумма">
+    </div>
+    <div class="row">
+      <select id="manualSource">
+        <option value="shared">В общий котёл</option>
+        <option value="personal">В личный кошелёк</option>
+      </select>
+    </div>
+    <div class="row">
+      <input id="manualDesc" placeholder="Откуда (Премия, Подарок)">
+      <button onclick="addManualIncome()">Пополнить</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📅 Расписание ЗП</h3>
+    <div class="row">
+      <input id="incName" placeholder="Название (ЗП)">
+      <input id="incAmount" type="number" placeholder="Сумма">
+      <input id="incDay" type="number" placeholder="День">
+      <button onclick="addScheduleIncome()">+</button>
+    </div>
+    <div id="incomesList" class="muted">Нет записей</div>
   </div>
 </div>
 
 <!-- ВКЛАДКА КАТЕГОРИЙ -->
 <div id="tab-categories" class="tab-content">
   <div class="card">
-    <h3>🎚️ Новая категория (Общая)</h3>
+    <h3>🎚️ Новая категория</h3>
     <div class="row">
-      <input id="catName" placeholder="Название (Кафе)">
+      <input id="catName" placeholder="Название">
       <input id="catLimit" type="number" placeholder="Лимит ₽">
       <button onclick="addCategory()">Создать</button>
     </div>
@@ -110,7 +142,7 @@
 <!-- ВКЛАДКА ПЛАНА -->
 <div id="tab-plan" class="tab-content">
   <div class="card">
-    <h3>📌 Постоянные списания (По датам)</h3>
+    <h3>📌 Постоянные списания</h3>
     <div class="row">
       <input id="fixName" placeholder="Название">
       <input id="fixAmount" type="number" placeholder="Сумма">
@@ -130,8 +162,8 @@
       <input id="debtDesc" placeholder="За что">
     </div>
     <div class="debt-buttons">
-      <button onclick="addDebt('me')" style="background:var(--negative)">- Я должен партнёру</button>
-      <button onclick="addDebt('partner')" style="background:var(--positive)">+ Партнёр должен мне</button>
+      <button onclick="addDebt('me')" style="background:var(--negative)">- Я должен</button>
+      <button onclick="addDebt('partner')" style="background:var(--positive)">+ Мне должны</button>
     </div>
   </div>
   <div class="card">
@@ -158,12 +190,10 @@ function fmt(n) { return Math.round(n).toLocaleString('ru-RU') + ' ₽'; }
 
 async function loadData() {
   try {
-    // 1. Загружаем категории
     let resCats = await fetch(`${BACKEND_URL}/api/get_categories?user_id=${userId}`);
     globalCategories = await resCats.json();
     document.getElementById('catSuggestions').innerHTML = globalCategories.map(c => `<option value="${c.name}">`).join('');
 
-    // 2. Загружаем аналитику
     let resAnal = await fetch(`${BACKEND_URL}/api/category_analytics?user_id=${userId}`);
     let analytics = await resAnal.json();
     
@@ -184,34 +214,26 @@ async function loadData() {
     });
     document.getElementById('categoriesList').innerHTML = catHtml || 'Нет категорий';
 
-    // 3. Синхронизация (Балансы и История)
     const resSync = await fetch(`${BACKEND_URL}/api/sync?user_id=${userId}`);
     const data = await resSync.json();
     partnerId = data.partner ? data.partner.id : null;
     
-    // Считаем общий котёл
     let totalSharedIncome = (data.user.shared_income || 0) + (data.partner?.shared_income || 0);
     let sharedSpent = 0;
     let myPersonalSpent = 0;
-    let partnerPersonalSpent = 0;
 
     data.transactions.forEach(tx => {
       if (tx.source === 'shared') sharedSpent += tx.amount;
       else if (tx.source === 'personal' && tx.user_id === userId) myPersonalSpent += tx.amount;
     });
 
-    // Общий баланс
     document.getElementById('sharedBalance').textContent = fmt(totalSharedIncome - sharedSpent);
-    
-    // Мой личный
     let myWallet = (data.user.personal_income || 0) - myPersonalSpent;
     document.getElementById('walletA').textContent = fmt(myWallet);
-
-    // Партнёра (только его баланс, без истории трат)
-    let partnerWallet = data.partner ? ((data.partner.personal_income || 0) - partnerPersonalSpent) : 0;
+    
+    let partnerWallet = data.partner ? (data.partner.personal_income || 0) : 0;
     document.getElementById('walletB').textContent = data.partner ? fmt(partnerWallet) : 'Нет партнёра';
 
-    // История
     document.getElementById('txList').innerHTML = data.transactions.length ? data.transactions.map(tx => `
       <div class="tx">
         <div>
@@ -224,9 +246,43 @@ async function loadData() {
 
     loadPlan();
     loadDebts();
+    loadScheduleIncomes();
+
   } catch (e) { console.error(e); }
 }
 
+// --- ПОПОЛНЕНИЕ ---
+async function addManualIncome() {
+  let amount = +document.getElementById('manualAmount').value;
+  let source = document.getElementById('manualSource').value;
+  let desc = document.getElementById('manualDesc').value || 'Пополнение';
+  if (!amount) return alert('Введите сумму');
+  
+  await fetch(`${BACKEND_URL}/api/add_manual_income?user_id=${userId}&amount=${amount}&source=${source}&description=${encodeURIComponent(desc)}`, {method: 'POST'});
+  
+  document.getElementById('manualAmount').value = '';
+  document.getElementById('manualDesc').value = '';
+  loadData();
+}
+
+async function addScheduleIncome() {
+  let name = document.getElementById('incName').value;
+  let amount = +document.getElementById('incAmount').value;
+  let day = +document.getElementById('incDay').value;
+  if (!name || !amount || !day) return alert('Заполните поля');
+  await fetch(`${BACKEND_URL}/api/schedule_income?user_id=${userId}&name=${encodeURIComponent(name)}&amount=${amount}&day=${day}`, {method: 'POST'});
+  loadData();
+}
+
+async function loadScheduleIncomes() {
+  let resInc = await fetch(`${BACKEND_URL}/api/get_schedule_income?user_id=${userId}`);
+  let incs = await resInc.json();
+  document.getElementById('incomesList').innerHTML = incs.length ? incs.map(i => `
+    <div class="tx"><div>${i.day_of_month} числа — <b>${i.name}</b></div><div class="positive">+${fmt(i.amount)}</div></div>
+  `).join('') : 'Нет записей';
+}
+
+// --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
 async function addCategory() {
   let name = document.getElementById('catName').value.trim();
   let limit = +document.getElementById('catLimit').value || 0;
@@ -251,7 +307,6 @@ async function addTxNotify() {
   loadData();
 }
 
-// --- ПЛАН ---
 async function addFixedExpense() {
   let name = document.getElementById('fixName').value;
   let amount = +document.getElementById('fixAmount').value;
@@ -264,23 +319,18 @@ async function addFixedExpense() {
 async function loadPlan() {
   let resFix = await fetch(`${BACKEND_URL}/api/get_fixed?user_id=${userId}`);
   let fixes = await resFix.json();
-  // Сортировка по дню
   fixes.sort((a,b) => a.day_of_month - b.day_of_month);
   document.getElementById('fixedList').innerHTML = fixes.length ? fixes.map(f => `
-    <div class="tx">
-      <div>${f.day_of_month} числа — <b>${f.name}</b></div>
-      <div class="negative">−${fmt(f.amount)}</div>
-    </div>
+    <div class="tx"><div>${f.day_of_month} числа — <b>${f.name}</b></div><div class="negative">−${fmt(f.amount)}</div></div>
   `).join('') : 'Нет записей';
 }
 
-// --- ДОЛГИ ---
 async function addDebt(type) {
   let amount = +document.getElementById('debtAmount').value;
   let desc = document.getElementById('debtDesc').value;
-  if (!amount || !desc || !partnerId) return alert('Заполните поля и убедитесь, что есть партнёр');
+  if (!amount || !desc || !partnerId) return alert('Заполните поля');
   
-  let lender = type === 'me' ? partnerId : userId; // Если я должен, то дал партнёр
+  let lender = type === 'me' ? partnerId : userId;
   let borrower = type === 'me' ? userId : partnerId;
 
   await fetch(`${BACKEND_URL}/api/add_debt?lender_id=${lender}&borrower_id=${borrower}&amount=${amount}&description=${encodeURIComponent(desc)}`, {method: 'POST'});
