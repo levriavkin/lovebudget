@@ -8,7 +8,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, CommandObject, Command
+from aiogram.filters import CommandStart, CommandObject
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from dotenv import load_dotenv
 
@@ -22,8 +22,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- БАЗА ДАННЫХ ---
-# ВАЖНО: Я изменил название базы на database_v3.db, чтобы старые данные не ломали новые таблицы
-DATABASE_URL = "sqlite:////tmp/database_v3.db" 
+# Используем /tmp для надежности на Render
+DATABASE_URL = "sqlite:////tmp/database_v4.db" 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 # --- МОДЕЛИ ---
@@ -36,7 +36,7 @@ class User(SQLModel, table=True):
 
 class Category(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    pair_id: int # ID одного из партнёров (для привязки к паре)
+    pair_id: int 
     name: str
     limit_amount: float = 0.0
 
@@ -69,7 +69,7 @@ class Debt(SQLModel, table=True):
     # Если это долг партнёру, тут будут ID. Если третьему лицу — None.
     lender_id: Optional[int] = None 
     borrower_id: Optional[int] = None 
-    name: str = "Партнёр" # Имя контрагента (для третьих лиц)
+    name: str = "Партнёр" 
     amount: float
     description: str
     is_paid: bool = False
@@ -151,7 +151,7 @@ async def telegram_webhook(request: Request):
 def get_pair_id(user_id: int, session: Session):
     user = session.get(User, user_id)
     if user and user.partner_id:
-        return min(user_id, user.partner_id) # Возвращаем ID младшего партнёра как ключ пары
+        return min(user_id, user.partner_id) 
     return user_id
 
 @app.get("/api/sync")
@@ -166,7 +166,6 @@ def sync_data(user_id: int, session: Session = Depends(lambda: Session(engine)))
     user_ids = [user.id] + ([partner.id] if partner else [])
     transactions = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids))).all()
     
-    # Скрываем личные транзакции партнёра
     visible_transactions = [tx for tx in transactions if tx.source == 'shared' or tx.user_id == user_id]
 
     return {
@@ -191,7 +190,7 @@ async def add_transaction_notify(user_id: int, amount: float, category: str, des
     await notify_partner(user_id, f"Трата: {category} на {amount} ₽.")
     return {"status": "success"}
 
-# --- КАТЕГОРИИ (ОБЩИЕ) ---
+# --- КАТЕГОРИИ ---
 @app.post("/api/add_category")
 def add_category(user_id: int, name: str, limit: float = 0.0, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
@@ -208,7 +207,7 @@ def get_categories(user_id: int, session: Session = Depends(lambda: Session(engi
     pair_id = get_pair_id(user_id, session)
     return session.exec(select(Category).where(Category.pair_id == pair_id)).all()
 
-# --- АНАЛИТИКА (Только общие траты) ---
+# --- АНАЛИТИКА ---
 @app.get("/api/category_analytics")
 def category_analytics(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
@@ -221,7 +220,23 @@ def category_analytics(user_id: int, session: Session = Depends(lambda: Session(
     for tx in txs: stats[tx.category] = stats.get(tx.category, 0) + tx.amount
     return stats
 
-# --- ПЛАН (ОБЩИЙ) ---
+@app.get("/api/get_analytics")
+def get_analytics(user_id: int, session: Session = Depends(lambda: Session(engine))):
+    pair_id = get_pair_id(user_id, session)
+    user = session.get(User, user_id)
+    user_ids = [user_id]
+    if user and user.partner_id: user_ids.append(user.partner_id)
+    
+    txs = session.exec(select(Transaction).where(Transaction.user_id.in_(user_ids), Transaction.source == 'shared')).all()
+    
+    total_spent = sum(tx.amount for tx in txs)
+    categories = {}
+    for tx in txs:
+        categories[tx.category] = categories.get(tx.category, 0) + tx.amount
+        
+    return {"total": total_spent, "categories": categories}
+
+# --- ПЛАН ---
 @app.post("/api/add_fixed")
 def add_fixed(user_id: int, name: str, amount: float, day: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
@@ -231,7 +246,6 @@ def add_fixed(user_id: int, name: str, amount: float, day: int, session: Session
 @app.get("/api/get_fixed")
 def get_fixed(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
-    # Сортируем по дню месяца
     return sorted(session.exec(select(FixedExpense).where(FixedExpense.pair_id == pair_id)).all(), key=lambda x: x.day_of_month)
 
 @app.post("/api/schedule_income")
@@ -251,12 +265,12 @@ def add_debt(user_id: int, amount: float, description: str, name: str = "Пар�
     pair_id = get_pair_id(user_id, session)
     user = session.get(User, user_id)
     
-    # Определяем, кто дал, а кто взял
-    lender = user_id if is_plus else (user.partner_id if user and user.partner_id else 0)
-    borrower = (user.partner_id if user and user.partner_id else 0) if is_plus else user_id
-    
-    # Если имя не "Партнёр", значит это третье лицо
-    if name != "Партнёр":
+    # Если имя "Партнёр" - используем ID для связки
+    if name == "Партнёр":
+        lender = user_id if is_plus else (user.partner_id if user and user.partner_id else 0)
+        borrower = (user.partner_id if user and user.partner_id else 0) if is_plus else user_id
+    else:
+        # Если третье лицо - ID не нужны, просто записываем имя
         lender = user_id if is_plus else None
         borrower = None if is_plus else user_id
     
@@ -267,7 +281,6 @@ def add_debt(user_id: int, amount: float, description: str, name: str = "Пар�
 @app.get("/api/get_debts")
 def get_debts(user_id: int, session: Session = Depends(lambda: Session(engine))):
     pair_id = get_pair_id(user_id, session)
-    # Возвращаем только неоплаченные
     return session.exec(select(Debt).where(Debt.pair_id == pair_id, Debt.is_paid == False)).all()
 
 @app.post("/api/update_debt")
@@ -279,27 +292,16 @@ def update_debt(debt_id: int, amount: float, is_paid: bool, session: Session = D
         session.add(debt); session.commit()
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Долг не найден")
-# --- РУЧНОЕ ПОПОЛНЕНИЕ БАЛАНСА ---
+
+# --- РУЧНОЕ ПОПОЛНЕНИЕ ---
 @app.post("/api/add_manual_income")
 async def add_manual_income(user_id: int, amount: float, source: str, description: str = "Пополнение", session: Session = Depends(lambda: Session(engine))):
-    # Создаем транзакцию с отрицательной суммой (или используем type='income', если поменяли модель)
-    # В нашей текущей модели Transaction все траты идут в минус, поэтому для дохода используем отрицательную сумму
-    # Но лучше создать отдельную транзакцию дохода. 
-    # Для простоты (чтобы не ломать текущую логику баланса) мы просто увеличим доход пользователя в базе.
-    
     user = session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not user: raise HTTPException(status_code=404, detail="Пользователь не найден")
         
-    if source == "shared":
-        user.shared_income += amount
-    else:
-        user.personal_income += amount
+    if source == "shared": user.shared_income += amount
+    else: user.personal_income += amount
         
-    session.add(user)
-    session.commit()
-    
-    # Отправляем уведомление партнёру
-    await notify_partner(user_id, f"Пополнение бюджета ({'Общий' if source == 'shared' else 'Личный'}): +{amount} ₽ ({description}).")
-    
-    return {"status": "success"}    
+    session.add(user); session.commit()
+    await notify_partner(user_id, f"Пополнение ({'Общий' if source == 'shared' else 'Личный'}): +{amount} ₽ ({description}).")
+    return {"status": "success"}
